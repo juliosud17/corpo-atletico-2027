@@ -3,8 +3,10 @@
 import { ALL_TABLES, db, nowISO, uid, type CorpoDB } from './db';
 import {
   buildInitialMilestones, buildInitialProfile, buildInitialTargets, buildWorkoutPlans, defaultSettings,
-  INITIAL_HABITS, seedFoodItems,
+  INITIAL_HABITS,
 } from './seed';
+import { REFERENCE_FOODS, referenceToFoodItem } from './foodDatabase';
+import { hasAnyNutrition } from '../domain/calculations';
 import { monthKey, todayISO, weekStartMonday } from '../domain/dates';
 import type {
   BackupFile, BodyMeasurement, Cadence, ExercisePrescription, ExerciseSet, FoodItem, FoodLog, GoalMilestone, HabitDefinition, ISODate,
@@ -28,7 +30,6 @@ export async function completeOnboarding(choice: OnboardingChoice, database: Cor
     await database.profile.put(profile);
     if ((await database.milestones.count()) === 0) await database.milestones.bulkPut(buildInitialMilestones(now, profile));
     if ((await database.targets.count()) === 0) await database.targets.put(buildInitialTargets(now, profile.startDate));
-    if ((await database.foodItems.count()) === 0) await database.foodItems.bulkPut(seedFoodItems(now));
     if ((await database.habits.count()) === 0) await database.habits.bulkPut(INITIAL_HABITS.map((h) => ({ ...h, id: `seed-habit-${h.order}` })));
     if ((await database.workoutPlans.count()) === 0) {
       const { plans, exercises } = buildWorkoutPlans();
@@ -40,6 +41,65 @@ export async function completeOnboarding(choice: OnboardingChoice, database: Cor
       showWorkouts: choice.showWorkouts, showPhotos: choice.showPhotos, safetyAcknowledgedAt: now, updatedAt: now,
     });
   });
+  await syncReferenceFoods(database);
+}
+
+/**
+ * Mantém a base de referência (TACO/IBGE) atualizada no catálogo local, preservando favoritos e porções
+ * do usuário, e remove os itens-semente antigos que ficaram sem valores nutricionais.
+ * Idempotente: só grava o que mudou.
+ */
+export async function syncReferenceFoods(database: CorpoDB = db): Promise<{ added: number; updated: number; removed: number }> {
+  const now = nowISO();
+  let added = 0, updated = 0, removed = 0;
+  await database.transaction('rw', database.foodItems, async () => {
+    for (const ref of REFERENCE_FOODS) {
+      const existing = await database.foodItems.get(ref.id);
+      const next = referenceToFoodItem(ref, now, existing);
+      const same = existing && existing.name === next.name && existing.kcalPerReference === next.kcalPerReference && existing.proteinGPerReference === next.proteinGPerReference
+        && existing.carbsGPerReference === next.carbsGPerReference && existing.fatGPerReference === next.fatGPerReference && existing.source === next.source
+        && existing.referenceUnit === next.referenceUnit && existing.note === next.note && existing.group === next.group && existing.builtin;
+      if (same) continue;
+      await database.foodItems.put(next);
+      if (existing) updated++; else added++;
+    }
+    const stale = (await database.foodItems.toArray()).filter((f) => f.id.startsWith('seed-food-') && !hasAnyNutrition(f) && !f.portions?.length);
+    if (stale.length) { await database.foodItems.bulkDelete(stale.map((f) => f.id)); removed = stale.length; }
+  });
+  return { added, updated, removed };
+}
+
+export async function setFoodFavorite(id: string, favorite: boolean, database: CorpoDB = db): Promise<void> {
+  await database.foodItems.update(id, { favorite, updatedAt: nowISO() });
+}
+
+export async function addFoodPortion(id: string, portion: { label: string; amount: number }, database: CorpoDB = db): Promise<void> {
+  const f = await database.foodItems.get(id);
+  if (!f) throw new Error('Alimento não encontrado');
+  const portions = [...(f.portions ?? []).filter((p) => p.label.toLowerCase() !== portion.label.toLowerCase()), portion].slice(-20);
+  await database.foodItems.update(id, { portions, updatedAt: nowISO() });
+}
+
+export async function removeFoodPortion(id: string, label: string, database: CorpoDB = db): Promise<void> {
+  const f = await database.foodItems.get(id);
+  if (!f) return;
+  await database.foodItems.update(id, { portions: (f.portions ?? []).filter((p) => p.label !== label), updatedAt: nowISO() });
+}
+
+/** Cria uma cópia personalizada de um alimento da base (ex.: marca ou preparo diferente). */
+export async function duplicateFood(id: string, patch: Partial<FoodItem>, database: CorpoDB = db): Promise<string> {
+  const f = await database.foodItems.get(id);
+  if (!f) throw new Error('Alimento não encontrado');
+  const { id: _old, builtin: _b, createdAt: _c, updatedAt: _u, ...rest } = f;
+  void _old; void _b; void _c; void _u;
+  return saveFoodItem({ ...rest, favorite: true, ...patch, source: patch.source ?? `Ajustado por você a partir de: ${f.source ?? f.name}` }, database);
+}
+
+/** Registra vários itens de uma vez (prato rápido). */
+export async function saveFoodLogs(items: Omit<FoodLog, 'id' | 'createdAt' | 'updatedAt'>[], database: CorpoDB = db): Promise<number> {
+  const now = nowISO();
+  await database.foodLogs.bulkPut(items.map((i) => ({ ...i, id: uid(), createdAt: now, updatedAt: now })));
+  return items.length;
 }
 
 export async function getSettings(database: CorpoDB = db): Promise<Settings> {
@@ -338,6 +398,7 @@ export async function importBackup(data: BackupFile, mode: ImportMode, database:
       await database.photoBlobs.bulkPut(data.photoBlobs!.map((b) => ({ id: b.id, type: b.type, data: base64ToBuffer(b.base64), thumb: b.thumbBase64 ? base64ToBuffer(b.thumbBase64) : undefined })));
     }
   });
+  await syncReferenceFoods(database);
 }
 
 // Fotos (Fase 3) -----------------------------------------------------------------------------

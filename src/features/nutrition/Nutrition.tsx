@@ -8,7 +8,9 @@ import { applyFavoriteMeal, copyMeal, deleteFoodItem, saveFavoriteMeal } from '.
 import { dayTotals, fmt, fmtInt, hasAnyNutrition, kcalSummaryText, nutritionAdherence, targetsForDate, type DayTotals } from '../../domain/calculations';
 import { addDays, formatBR, formatLongBR, formatShortBR, localDateTimeToISO, weekday, weekdayShort } from '../../domain/dates';
 import type { FoodLog, NutritionTargets } from '../../domain/types';
-import { PREP_LABEL, UNIT_LABEL } from './FoodSheet';
+import { PREP_LABEL, UNIT_LABEL, sourceTag } from './FoodSheet';
+import { proteinFillers, remainingForDay } from '../../domain/nutrition';
+import type { FoodItem } from '../../domain/types';
 
 export function MacroBars({ totals, targets }: { totals: DayTotals; targets: NutritionTargets | null }) {
   if (!targets) return null;
@@ -25,6 +27,32 @@ export function MacroBars({ totals, targets }: { totals: DayTotals; targets: Nut
           <ProgressBar label={r.label} value={totals.hasEntries ? r.v : 0} max={r.t} tone={totals.hasEntries && r.v > r.t * 1.1 ? 'warn' : 'accent'} valueText={totals.hasEntries ? `${fmtInt(r.v)} de ${fmtInt(r.t)} g` : 'sem registro'} />
         </div>
       ))}
+    </div>
+  );
+}
+
+/** O que falta para fechar as metas do dia e quanto de cada proteína do dia a dia cobriria a proteína restante. */
+function CloseTheDay({ totals, targets, foods }: { totals: DayTotals; targets: NutritionTargets; foods: FoodItem[] }) {
+  const r = remainingForDay(totals, targets);
+  const fillers = proteinFillers(r.proteinG, foods.filter((f) => f.favorite && f.group === 'protein')).slice(0, 4);
+  return (
+    <div className="mt-4 rounded-xl border border-line p-3">
+      <p className="text-sm font-semibold">Para fechar o dia</p>
+      <p className="num mt-1 text-sm">
+        {r.kcal >= 0 ? <>Faltam <b>{fmtInt(r.kcal)} kcal</b></> : <>Passou <b>{fmtInt(-r.kcal)} kcal</b> da meta</>}
+        {' · '}{r.proteinG > 0 ? <>proteína: faltam <b>{fmtInt(r.proteinG)} g</b></> : <>proteína ✔</>}
+        {' · '}C {r.carbsG > 0 ? `faltam ${fmtInt(r.carbsG)} g` : '✔'} · G {r.fatG > 0 ? `faltam ${fmtInt(r.fatG)} g` : '✔'}
+      </p>
+      {totals.itemsMissingKcal > 0 && <p className="mt-1 text-xs text-warn">Há itens sem dados: o que falta pode ser menos.</p>}
+      {fillers.length > 0 && (
+        <>
+          <p className="mt-2 text-xs text-muted">Para completar a proteína com seus alimentos (cada opção sozinha):</p>
+          <ul className="mt-1 space-y-0.5 text-sm">
+            {fillers.map((x) => <li key={x.food.id} className="num">≈ <b>{fmtInt(x.amount)} {UNIT_LABEL[x.unit]}</b> de {x.food.name} <span className="text-muted">(+{fmtInt(x.kcal)} kcal)</span></li>)}
+          </ul>
+        </>
+      )}
+      <p className="mt-2 text-xs text-muted">Sugestão de referência, não prescrição. Nada é registrado sozinho.</p>
     </div>
   );
 }
@@ -84,6 +112,7 @@ export function Nutrition() {
   return (
     <Page title="Alimentação" subtitle={formatLongBR(day)}
       action={<Button onClick={() => open({ kind: 'food', date: day })}>+ Alimento</Button>}>
+      <Button variant="secondary" className="w-full" onClick={() => open({ kind: 'plate', date: day })}>🍽️ Montar prato com meus alimentos</Button>
       <div className="flex items-center gap-2">
         <Button variant="secondary" aria-label="Dia anterior" onClick={() => setDate(addDays(day, -1))}>‹</Button>
         <TextInput type="date" aria-label="Escolher dia" value={day} onChange={(e) => e.target.value && setDate(e.target.value)} className="flex-1 text-center" />
@@ -94,6 +123,7 @@ export function Nutrition() {
       <Card title="Total do dia">
         <KcalHeadline totals={totals} targets={tg} />
         <div className="mt-4"><MacroBars totals={totals} targets={tg} /></div>
+        {tg && totals.hasEntries && <CloseTheDay totals={totals} targets={tg} foods={foods} />}
         {tg && <p className="mt-3 text-xs text-muted">Meta vigente desde {formatBR(tg.effectiveDate)}: {fmtInt(tg.caloriesKcal)} kcal · P {fmtInt(tg.proteinG)} g · C {fmtInt(tg.carbsG)} g · G {fmtInt(tg.fatG)} g.</p>}
       </Card>
 
@@ -124,6 +154,7 @@ export function Nutrition() {
             ) : ref?.reference ? <p className="mb-2 text-xs text-muted">Referência (não validada): {ref.reference}</p> : null}
             <div className="flex flex-wrap gap-2">
               <Button variant="secondary" className="!min-h-9 !px-3 text-sm" onClick={() => open({ kind: 'food', date: day, meal: label })}>+ Adicionar</Button>
+              <Button variant="ghost" className="!min-h-9 !px-3 text-sm" onClick={() => open({ kind: 'plate', date: day, meal: label })}>🍽️ Prato</Button>
               <Button variant="ghost" className="!min-h-9 !px-3 text-sm" onClick={async () => {
                 const n = await save(() => copyMeal(addDays(day, -1), day, label, localDateTimeToISO(day, mealTime(label))));
                 if (n !== undefined) show(n ? `${n} item(ns) copiado(s) de ontem` : 'Ontem não há itens nesta refeição', n ? 'ok' : 'info');
@@ -164,13 +195,13 @@ export function Nutrition() {
       </Card>
 
       <Card title="Meu catálogo de alimentos" action={<Button variant="ghost" onClick={() => setCatalogOpen(!catalogOpen)}>{catalogOpen ? 'Fechar' : `Ver (${foods.length})`}</Button>}>
-        <p className="text-sm text-muted">Itens iniciais vêm <b>sem valores nutricionais</b> — complete pelo rótulo ou por tabela confiável (TACO/NEPA-Unicamp, TBCA/USP) ao registrar.</p>
+        <p className="text-sm text-muted">{foods.filter((f) => f.builtin).length} alimentos com valores das tabelas oficiais <b>TACO (Unicamp)</b> e <b>IBGE (POF 2008-2009)</b>, por 100 g do alimento pronto. ★ = seu dia a dia. Para marca ou preparo diferente, crie a sua versão ao registrar.</p>
         {catalogOpen && (
           <ul className="mt-3 divide-y divide-line">
             {[...foods].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')).map((f) => (
               <li key={f.id} className="flex items-center justify-between gap-2 py-2 text-sm">
-                <span className="min-w-0"><span className="block truncate">{f.name}</span><span className="block text-xs text-muted">por {fmt(f.referenceAmount, 0)} {UNIT_LABEL[f.referenceUnit]} · {hasAnyNutrition(f) ? `${f.kcalPerReference !== undefined ? fmtInt(f.kcalPerReference) + ' kcal' : ''} ${f.source ?? ''}` : 'sem dados'}</span></span>
-                <button type="button" className="min-h-9 shrink-0 px-2 text-danger" onClick={() => setDelFood(f.id)} aria-label={`Excluir ${f.name} do catálogo`}>Excluir</button>
+                <span className="min-w-0"><span className="block truncate">{f.name}</span><span className="block text-xs text-muted">{f.favorite ? '★ ' : ''}{sourceTag(f)} · por {fmt(f.referenceAmount, 0)} {UNIT_LABEL[f.referenceUnit]} · {hasAnyNutrition(f) ? `${fmtInt(f.kcalPerReference)} kcal · P ${fmt(f.proteinGPerReference)} · C ${fmt(f.carbsGPerReference)} · G ${fmt(f.fatGPerReference)}` : 'sem dados'}</span></span>
+                {!f.builtin && <button type="button" className="min-h-9 shrink-0 px-2 text-danger" onClick={() => setDelFood(f.id)} aria-label={`Excluir ${f.name} do catálogo`}>Excluir</button>}
               </li>
             ))}
           </ul>

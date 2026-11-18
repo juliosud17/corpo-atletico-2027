@@ -76,7 +76,10 @@ const foodItem = z.object({
   ...base, name: text(160).min(1), brand: text(120).optional(), preparation: prep, referenceAmount: num(0.0001, 100000),
   referenceUnit: unit, kcalPerReference: optNum(0, 100000), proteinGPerReference: optNum(0, 10000),
   carbsGPerReference: optNum(0, 10000), fatGPerReference: optNum(0, 10000), source: text(300).optional(),
-  favorite: z.boolean().optional(), createdAt: isoDateTime, updatedAt: isoDateTime,
+  favorite: z.boolean().optional(), builtin: z.boolean().optional(),
+  group: z.enum(['protein', 'carb', 'dairy', 'fruit', 'vegetable', 'fat', 'other']).optional(), note: text(300).optional(),
+  portions: z.array(z.object({ label: text(60).min(1), amount: num(0.0001, 100000) })).max(20).optional(),
+  createdAt: isoDateTime, updatedAt: isoDateTime,
 });
 
 const nutrientFields = {

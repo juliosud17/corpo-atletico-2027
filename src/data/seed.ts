@@ -2,7 +2,7 @@
 // O plano pessoal do usuário é restaurado de um arquivo JSON privado (ver README).
 // Não cria pesagens, refeições, treinos concluídos ou marcações de hábitos.
 import type {
-  ExercisePrescription, FoodItem, GoalMilestone, HabitDefinition, NutritionTargets, Settings, UserProfile, WorkoutPlan,
+  ExercisePrescription, GoalMilestone, HabitDefinition, NutritionTargets, Settings, UserProfile, WorkoutPlan,
 } from '../domain/types';
 import { DEFAULT_TZ } from '../domain/dates';
 
@@ -17,35 +17,6 @@ export const INITIAL_MEALS = [
   { label: 'Lanche', time: '16:00' },
   { label: 'Jantar', time: '19:00' },
 ];
-
-/**
- * Catálogo inicial: SOMENTE nomes, unidades e estado (cru/cozido).
- * Sem base nutricional validada integrada, os macros ficam em branco até o usuário
- * confirmar pelo rótulo ou por uma tabela confiável (ex.: TACO/NEPA-UNICAMP, TBCA/USP).
- */
-const CATALOG: Omit<FoodItem, 'id' | 'createdAt' | 'updatedAt'>[] = [
-  { name: 'Ovo de galinha inteiro', preparation: 'cooked', referenceAmount: 1, referenceUnit: 'unit' },
-  { name: 'Pão integral (fatia)', preparation: 'other', referenceAmount: 1, referenceUnit: 'unit' },
-  { name: 'Banana', preparation: 'raw', referenceAmount: 1, referenceUnit: 'unit' },
-  { name: 'Peito de frango grelhado', preparation: 'cooked', referenceAmount: 100, referenceUnit: 'g' },
-  { name: 'Arroz branco cozido', preparation: 'cooked', referenceAmount: 100, referenceUnit: 'g' },
-  { name: 'Feijão carioca cozido', preparation: 'cooked', referenceAmount: 100, referenceUnit: 'g' },
-  { name: 'Azeite de oliva', preparation: 'other', referenceAmount: 10, referenceUnit: 'g' },
-  { name: 'Whey protein (dose)', preparation: 'other', referenceAmount: 30, referenceUnit: 'g' },
-  { name: 'Iogurte natural', preparation: 'other', referenceAmount: 170, referenceUnit: 'g' },
-  { name: 'Aveia em flocos', preparation: 'raw', referenceAmount: 30, referenceUnit: 'g' },
-  { name: 'Carne bovina magra (patinho) cozida', preparation: 'cooked', referenceAmount: 100, referenceUnit: 'g' },
-  { name: 'Legumes cozidos', preparation: 'cooked', referenceAmount: 100, referenceUnit: 'g' },
-  { name: 'Manteiga', preparation: 'other', referenceAmount: 10, referenceUnit: 'g' },
-  { name: 'Leite integral', preparation: 'other', referenceAmount: 250, referenceUnit: 'ml' },
-  { name: 'Salada de folhas', preparation: 'raw', referenceAmount: 100, referenceUnit: 'g' },
-];
-
-// IDs determinísticos para itens-semente: restaurar um backup (mesclar) em uma instalação
-// nova não duplica catálogo, hábitos, marcos e plano de treino.
-export function seedFoodItems(now: string): FoodItem[] {
-  return CATALOG.map((f, i) => ({ ...f, id: `seed-food-${i + 1}`, source: 'Catálogo inicial — valores nutricionais a confirmar', createdAt: now, updatedAt: now }));
-}
 
 export const INITIAL_HABITS: Omit<HabitDefinition, 'id'>[] = [ // id = seed-habit-<order>
   { title: 'Registrar a alimentação de hoje', cadence: 'daily', targetCount: 1, active: true, order: 1 },

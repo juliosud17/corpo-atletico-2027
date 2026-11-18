@@ -2,6 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useEffect, useState } from 'react';
 import { HashRouter, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { db } from '../data/db';
+import { syncReferenceFoods } from '../data/repo';
 import { ToastProvider, cx } from '../components/ui';
 import { SheetsProvider } from './sheets';
 import { Onboarding } from '../features/onboarding/Onboarding';
@@ -70,6 +71,9 @@ function Shell() {
   const settings = useLiveQuery(() => db.settings.get('app').then((s) => s ?? null), []);
   const profile = useLiveQuery(() => db.profile.get('me').then((p) => p ?? null), []);
   useTheme(settings);
+  // Atualiza a base de alimentos (TACO/IBGE) a cada versão do app, sem tocar nos registros.
+  const onboarded = !!settings?.onboardingDone;
+  useEffect(() => { if (onboarded) void syncReferenceFoods().catch(() => {}); }, [onboarded]);
   if (settings === undefined || profile === undefined) {
     return <div className="flex min-h-dvh items-center justify-center text-muted" role="status">Carregando…</div>;
   }

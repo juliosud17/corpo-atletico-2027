@@ -177,7 +177,7 @@ export function Today() {
             <div className="mt-3"><MacroBars totals={totals} targets={tg} /></div>
             <div className="mt-3 flex items-center justify-between gap-2 border-t border-line pt-3">
               <span className="num text-sm">💧 {fmtInt(waterTotal)} ml {tg && <span className="text-muted">/ ref. {fmtInt(tg.waterMinMl)}–{fmtInt(tg.waterMaxMl)}</span>}</span>
-              <Button variant="secondary" className="!min-h-9 !px-3 text-sm" onClick={() => open({ kind: 'water' })}>+ Água</Button>
+              <span className="flex gap-1.5"><Button variant="secondary" className="!min-h-9 !px-3 text-sm" onClick={() => open({ kind: 'plate' })}>🍽️ Prato</Button><Button variant="secondary" className="!min-h-9 !px-3 text-sm" onClick={() => open({ kind: 'water' })}>+ Água</Button></span>
             </div>
           </Card>
         )}

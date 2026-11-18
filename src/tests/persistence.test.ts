@@ -30,10 +30,10 @@ describe('Plano inicial', () => {
     expect(await database.completions.count()).toBe(0);
     const t = await database.targets.toArray();
     expect(t[0]).toMatchObject({ caloriesKcal: 2000, proteinG: 150, carbsG: 200, fatG: 67 });
-    // catálogo inicial não inventa macros
+    // catálogo vem da base oficial (TACO/IBGE), cada item com fonte
     const foods = await database.foodItems.toArray();
-    expect(foods.length).toBeGreaterThan(5);
-    expect(foods.every((f) => f.kcalPerReference === undefined && f.proteinGPerReference === undefined)).toBe(true);
+    expect(foods.length).toBeGreaterThan(30);
+    expect(foods.every((f) => f.builtin && f.source && (f.source.startsWith('TACO') || f.source.startsWith('IBGE')))).toBe(true);
     // todos os treinos (exceto descanso) exigem liberação
     const plans = await database.workoutPlans.toArray();
     expect(plans.filter((pl) => pl.type !== 'rest').every((pl) => pl.requiresClearance)).toBe(true);

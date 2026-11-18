@@ -37,6 +37,7 @@ Testes de ponta a ponta (opcional, requer Python + Playwright e o `npm run previ
 pip install playwright && playwright install chromium
 python3 e2e/flows.py   # Fase 1: 28 verificações em 320 px, incluindo offline (pasta local, não versionada)
 python3 e2e/fase2.py   # Fase 2: 20 verificações (sessão ao vivo, reload no meio do treino, editor, histórico)
+python3 e2e/alimentacao.py # Alimentação: 15 verificações (base oficial, porções, prato, “fechar o dia”, versão pessoal)
 python3 e2e/fase3.py   # Fase 3: 21 verificações (fotos, comparação, relatórios, CSV/HTML, backup com fotos, offline, sem upload)
 ```
 
@@ -58,6 +59,8 @@ Alternativas: Netlify/Vercel/Cloudflare Pages (arraste a pasta `dist/`). Para te
 | Onboarding | “Usar meu plano inicial (arquivo .json)” com prévia, ou “Configurar do zero” (perfil, datas, condições de saúde), escolha dos cartões do painel, alerta de segurança (sem bloquear) |
 | Hoje (painel) | Peso atual × referência inicial, peso inicial → objetivo, barra de avanço limitada a 0–100% (variação real quando acima do inicial), mini-gráfico real × metas, “ainda falta registrar hoje”, 6 ações rápidas, kcal/macros registrados, água, próximo treino com status de liberação, checklist diário e semanal, aviso do dia 17, sugestão de revisão de tendência (nunca aplicada sozinha) |
 | Evolução | Registro/edição/exclusão de peso (data + hora), gráfico 7/30/90 dias/tudo com linha real e linha de metas interpolada, “Sem dados registrados”, médias semanais (segunda a domingo) com contagem e “parcial”, diferença para a semana anterior ou “dados insuficientes”, IMC com ressalva, calendário de marcos (atingido/não atingido/remarcado), medidas corporais opcionais e % de gordura apenas se medido externamente (com método) |
+| Base de alimentos | **46 alimentos com valores oficiais** por 100 g, conferidos nas publicações da **TACO (NEPA/Unicamp, 2ª ed.)** e do **IBGE (POF 2008-2009, Tabelas de Composição Nutricional)** — cada item mostra a fonte e o nome exato da tabela. Inclui as proteínas do dia a dia (filé de frango grelhado, contra-filé com e sem gordura, frango à milanesa, ovos cozido/frito/cru, carne de panela de acém, coxa e sobrecoxa assadas com pele, frango ao molho), carboidratos, laticínios, frutas, legumes e gorduras. Sem whey e sem peixes. A base é atualizada no aparelho a cada versão sem apagar favoritos, porções ou registros |
+| Alimentação — rotina | Lista “Do dia a dia” (★), recentes e filtro por grupo; **porções próprias** (ex.: “1 filé = 120 g”) com atalhos 2× e 3×; **Montar prato** (vários alimentos de uma vez com total ao vivo); “**Para fechar o dia**”: o que falta de kcal e macros e quanto de cada proteína do dia a dia completaria a proteína; versão pessoal de um alimento (marca/preparo) sem alterar a base oficial |
 | Alimentação | Diário por dia e refeição (horários editáveis + “Extras”), catálogo com busca, alimentos por g/ml/unidade e estado cru/cozido, correção de valores por marca/preparo com fonte, cadastro manual, kcal do rótulo preservada e kcal estimada por macros sinalizada, itens sem dados registrados sem inventar macros, copiar refeição de ontem, favoritas, água (atalhos e valor livre), últimos 7 dias com adesão sobre **dias registrados** |
 | Checklist | Listas diárias, semanais e mensais; marcação só manual; dicas calculadas dos registros (ex.: “pesagens nesta semana: 2 de 3”); criar, editar, pausar e excluir |
 | Treinos — segurança | Alerta com as condições informadas no perfil, “Iniciar treino físico” (confirmar liberação com data **ou** só planejamento), status “não liberado” mantido até a confirmação, confirmação obrigatória para iniciar ou registrar execução sem liberação (a sessão fica marcada), SAMU 192 em sintomas urgentes |
@@ -76,7 +79,7 @@ Alternativas: Netlify/Vercel/Cloudflare Pages (arraste a pasta `dist/`). Para te
 ### Regras de honestidade aplicadas
 
 - Nenhuma pesagem, refeição, treino ou marcação é criada automaticamente. O plano entra só como configuração editável.
-- Catálogo inicial **sem valores nutricionais** (não há base validada integrada): complete pelo rótulo ou por TACO/TBCA ao registrar.
+- Base nutricional só com valores conferidos nas tabelas oficiais (TACO e IBGE), com a fonte visível em cada alimento; itens sem dados continuam sem macros inventados.
 - Dia sem registro aparece como “Nenhum alimento registrado”/“—”, nunca como 0 kcal.
 - Nenhuma meta é alterada sem confirmação explícita; sugestões de ajuste (150–200 kcal) são só texto.
 - Sem % de gordura estimado, sem calorias de treino, sem notificações prometidas que não funcionariam.
@@ -87,7 +90,7 @@ Alternativas: Netlify/Vercel/Cloudflare Pages (arraste a pasta `dist/`). Para te
 
 ## Testes
 
-`npm test` — 59 testes públicos (Vitest + fake-indexeddb) com valores de exemplo, incluindo cronômetro, histórico/progressão por exercício, sessão ao vivo, editor de plano, resumos semanais/mensais, revisão, lembretes, CSV, relatório HTML, fotos e backup com/sem imagens e migração do banco v1 → v3, mais 5 privados em `private/` com os valores reais. Critérios de aceitação da Parte G:
+`npm test` — 69 testes públicos (Vitest + fake-indexeddb) com valores de exemplo, incluindo cronômetro, histórico/progressão por exercício, sessão ao vivo, editor de plano, resumos semanais/mensais, revisão, lembretes, CSV, relatório HTML, fotos e backup com/sem imagens e migração do banco v1 → v3, mais 5 privados em `private/` com os valores reais. Critérios de aceitação da Parte G:
 
 | Parte G | Coberto por |
 |---|---|

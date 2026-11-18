@@ -130,9 +130,17 @@ export interface FoodItem {
   fatGPerReference?: number;
   source?: string;
   favorite?: boolean;
+  /** Item da base de referência (TACO/IBGE) — valores não são editados no lugar; duplique para personalizar. */
+  builtin?: boolean;
+  group?: 'protein' | 'carb' | 'dairy' | 'fruit' | 'vegetable' | 'fat' | 'other';
+  note?: string;
+  /** Porções do próprio usuário, ex.: "1 filé" = 120 g. */
+  portions?: FoodPortion[];
   createdAt: ISODateTime;
   updatedAt: ISODateTime;
 }
+
+export interface FoodPortion { label: string; amount: number }
 
 export interface FoodLog {
   id: ID;
