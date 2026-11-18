@@ -238,7 +238,7 @@ function PreferencesCard() {
       </div>
       <div className="mt-3 grid grid-cols-2 gap-3">
         <Field label="Tema">{(id) => <Select id={id} value={settings.theme} onChange={(e) => set({ theme: e.target.value as 'dark' })}><option value="dark">Grafite escuro</option><option value="light">Claro</option><option value="system">Automático</option></Select>}</Field>
-        <Field label="Cor de destaque">{(id) => <Select id={id} value={settings.accent} onChange={(e) => set({ accent: e.target.value as 'green' })}><option value="green">Verde</option><option value="blue">Azul</option></Select>}</Field>
+        <Field label="Cor de destaque">{(id) => <Select id={id} value={settings.accent} onChange={(e) => set({ accent: e.target.value as 'orange' })}><option value="orange">Laranja</option><option value="green">Verde</option><option value="blue">Azul</option></Select>}</Field>
         <Field label="Fuso horário" className="col-span-2" hint="Define a data de “hoje” e o início das semanas (segunda-feira).">{(id) => (
           <Select id={id} value={settings.timeZone} onChange={(e) => set({ timeZone: e.target.value })}>
             {['America/Sao_Paulo', 'America/Manaus', 'America/Cuiaba', 'America/Belem', 'America/Fortaleza', 'America/Recife', 'America/Noronha', 'America/Rio_Branco', 'America/Denver', 'America/New_York', 'America/Los_Angeles', 'Europe/Lisbon'].map((z) => <option key={z} value={z}>{z.replace('_', ' ')}</option>)}

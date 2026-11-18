@@ -54,7 +54,7 @@ export function NutrientPreview({ n }: { n: Nutrients | null }) {
   );
 }
 
-export function FoodSheet({ date: initialDate, meal, log, onClose }: { date?: string; meal?: string; log?: FoodLog; onClose: () => void }) {
+export function FoodSheet({ date: initialDate, meal, log, foodId, onClose }: { date?: string; meal?: string; log?: FoodLog; foodId?: string; onClose: () => void }) {
   const today = useToday();
   const settings = useSettingsOrDefault();
   const save = useSave();
@@ -70,6 +70,7 @@ export function FoodSheet({ date: initialDate, meal, log, onClose }: { date?: st
   const [portionLabel, setPortionLabel] = useState('');
   const recentLogs = useLiveQuery(() => db.foodLogs.orderBy('date').reverse().limit(300).toArray(), [], [] as FoodLog[]);
   const [selected, setSelected] = useState<FoodItem | null>(null);
+  const [preselected, setPreselected] = useState(false);
   const [amount, setAmount] = useState(log ? str(log.amount) : '');
   const [editFood, setEditFood] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
@@ -109,6 +110,13 @@ export function FoodSheet({ date: initialDate, meal, log, onClose }: { date?: st
     const est = kcalFromMacros(pp, cc, gg);
     return Math.abs(est - k) / k > 0.08 ? est : null;
   })();
+
+  // Alimento escolhido na aba Alimentos: abre já selecionado.
+  if (foodId && !preselected && foods.length) {
+    const f = foods.find((x) => x.id === foodId);
+    setPreselected(true);
+    if (f) { setSelected(f); setAmount(str(f.portions?.[0]?.amount ?? f.referenceAmount)); }
+  }
 
   function pick(food: FoodItem) {
     setSelected(food);

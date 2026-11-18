@@ -58,8 +58,8 @@ export function Onboarding() {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-lg flex-col px-4 pb-10 pt-safe">
       <div className="pt-8 pb-5">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Corpo Atlético 2027</p>
-        <h1 className="mt-1 text-3xl font-extrabold tracking-tight">{['Bem-vindo', 'Seus dados', 'Seu painel', 'Antes de começar'][step]}</h1>
+        <p className="eyebrow !text-accent">Corpo Atlético 2027</p>
+        <h1 className="display mt-1 text-[34px] font-bold leading-none">{['Bem-vindo', 'Seus dados', 'Seu painel', 'Antes de começar'][step]}</h1>
         {step > 0 && <p className="mt-1 text-sm text-muted">Passo {step} de 3</p>}
       </div>
 

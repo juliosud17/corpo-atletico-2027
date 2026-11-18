@@ -89,7 +89,7 @@ const nutrientFields = {
 
 const foodLog = z.object({
   ...base, date: isoDate, consumedAt: isoDateTime, mealLabel: text(80), foodId: id.optional(), description: text(200),
-  amount: num(0, 100000), unit, preparation: prep, ...nutrientFields, note: text(500).optional(),
+  amount: num(0, 100000), unit, preparation: prep, ...nutrientFields, recipeId: id.optional(), note: text(500).optional(),
   createdAt: isoDateTime, updatedAt: isoDateTime,
 });
 
@@ -144,7 +144,8 @@ const completion = z.object({
 });
 
 const settings = z.object({
-  id: z.literal('app'), onboardingDone: z.boolean(), theme: z.enum(['dark', 'light', 'system']), accent: z.enum(['green', 'blue']),
+  id: z.literal('app'), onboardingDone: z.boolean(), theme: z.enum(['dark', 'light', 'system']), accent: z.enum(['orange', 'green', 'blue']), designVersion: z.number().int().min(0).max(100).optional(),
+  mealSplits: z.record(z.string().max(80), z.number().min(0).max(100)).optional(),
   timeZone: z.string().max(60), showWeight: z.boolean(), showCalories: z.boolean(), showWorkouts: z.boolean(), showPhotos: z.boolean(),
   trackingPaused: z.boolean(), safetyAcknowledgedAt: isoDateTime.optional(),
   meals: z.array(z.object({ label: text(80), time: z.string().max(5), reference: text(300).optional() })).max(20),
@@ -185,6 +186,11 @@ export const backupSchema = z.object({
   habits: arr(habit),
   completions: arr(completion),
   settings: settings.nullable(),
+  recipes: z.array(z.object({
+    ...base, name: text(160).min(1), servings: num(0.1, 1000), cookedWeightG: optNum(1, 100000), sourceUrl: text(1000).optional(),
+    notes: text(4000).optional(), favorite: z.boolean().optional(), createdAt: isoDateTime, updatedAt: isoDateTime,
+    ingredients: z.array(z.object({ ...base, text: text(300), foodId: id.optional(), amount: optNum(0, 100000), ignored: z.boolean().optional() })).max(200),
+  })).max(5000).default([]),
   photos: z.array(photo).max(5000).default([]),
   photoBlobs: z.array(photoBlob).max(5000).default([]),
 });
@@ -237,6 +243,7 @@ export function backupCounts(b: BackupFile): { label: string; count: number }[] 
     { label: 'Marcações de hábitos', count: b.completions.length },
     { label: 'Marcos de meta', count: b.milestones.length },
     { label: 'Versões de metas nutricionais', count: b.targets.length },
+    { label: 'Receitas', count: b.recipes?.length ?? 0 },
     { label: 'Fotos (dados)', count: b.photos?.length ?? 0 },
     { label: 'Fotos (imagens incluídas)', count: b.photoBlobs?.length ?? 0 },
   ];

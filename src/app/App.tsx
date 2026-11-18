@@ -2,7 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useEffect, useState } from 'react';
 import { HashRouter, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { db } from '../data/db';
-import { syncReferenceFoods } from '../data/repo';
+import { syncReferenceFoods, updateSettings } from '../data/repo';
 import { ToastProvider, cx } from '../components/ui';
 import { SheetsProvider } from './sheets';
 import { Onboarding } from '../features/onboarding/Onboarding';
@@ -27,12 +27,12 @@ const NAV = [
 
 function BottomNav() {
   return (
-    <nav aria-label="Navegação principal" className="pb-safe fixed inset-x-0 bottom-0 z-40 border-t border-line bg-card/95 backdrop-blur">
+    <nav aria-label="Navegação principal" className="pb-safe fixed inset-x-0 bottom-0 z-40 border-t border-line bg-bg/95 backdrop-blur">
       <ul className="mx-auto flex max-w-2xl">
         {NAV.map((n) => (
           <li key={n.to} className="flex-1">
             <NavLink to={n.to} end={n.to === '/'}
-              className={({ isActive }) => cx('flex min-h-14 flex-col items-center justify-center gap-0.5 pt-1.5 text-[11px] font-medium', isActive ? 'text-accent' : 'text-muted')}>
+              className={({ isActive }) => cx('display flex min-h-14 flex-col items-center justify-center gap-0.5 pt-1.5 text-[11.5px] font-medium tracking-wide', isActive ? 'text-accent' : 'text-muted')}>
               {({ isActive }) => (
                 <>
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={isActive ? 2.4 : 1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d={n.icon} /></svg>
@@ -63,7 +63,8 @@ function useTheme(settings: Settings | null | undefined) {
     root.classList.toggle('dark', dark);
     root.classList.toggle('light', !dark);
     root.classList.toggle('accent-blue', settings?.accent === 'blue');
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0f1418' : '#f3f5f7');
+    root.classList.toggle('accent-green', settings?.accent === 'green');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', dark ? '#0b0b0c' : '#f4f4f5');
   }, [settings?.theme, settings?.accent, systemDark]);
 }
 
@@ -74,6 +75,9 @@ function Shell() {
   // Atualiza a base de alimentos (TACO/IBGE) a cada versão do app, sem tocar nos registros.
   const onboarded = !!settings?.onboardingDone;
   useEffect(() => { if (onboarded) void syncReferenceFoods().catch(() => {}); }, [onboarded]);
+  // Visual novo (laranja): aplicado uma vez; depois a cor escolhida em Perfil é respeitada.
+  const designVersion = settings?.designVersion;
+  useEffect(() => { if (onboarded && (designVersion ?? 0) < 2) void updateSettings({ accent: 'orange', designVersion: 2 }).catch(() => {}); }, [onboarded, designVersion]);
   if (settings === undefined || profile === undefined) {
     return <div className="flex min-h-dvh items-center justify-center text-muted" role="status">Carregando…</div>;
   }

@@ -1,16 +1,20 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useMemo, useState } from 'react';
-import { Alert, Button, Card, ConfirmDialog, Field, Page, ProgressBar, Sheet, TextInput, cx, useToast } from '../../components/ui';
-import { useSave, useSettingsOrDefault, useToday } from '../../app/hooks';
+import { useState } from 'react';
+import { Alert, Button, Card, Page, ProgressBar, Sheet, StatTile, Tabs, TextInput, cx } from '../../components/ui';
+import { IconChevron, IconClock, IconPlate, MealIcon } from '../../components/ui/icons';
+import { useProfile, useSave, useSettingsOrDefault, useToday } from '../../app/hooks';
 import { useSheets } from '../../app/sheets';
 import { db } from '../../data/db';
-import { applyFavoriteMeal, copyMeal, deleteFoodItem, saveFavoriteMeal } from '../../data/repo';
-import { dayTotals, fmt, fmtInt, hasAnyNutrition, kcalSummaryText, nutritionAdherence, targetsForDate, type DayTotals } from '../../domain/calculations';
-import { addDays, formatBR, formatLongBR, formatShortBR, localDateTimeToISO, weekday, weekdayShort } from '../../domain/dates';
-import type { FoodLog, NutritionTargets } from '../../domain/types';
-import { PREP_LABEL, UNIT_LABEL, sourceTag } from './FoodSheet';
+import { updateSettings } from '../../data/repo';
+import { bmi, dayTotals, fmt, fmtInt, kcalSummaryText, latestWeight, nutritionAdherence, parseDecimal, targetsForDate, type DayTotals } from '../../domain/calculations';
+import { addDays, formatBR, formatLongBR, formatShortBR, timeInTimeZone, weekday, weekdayName, weekdayShort } from '../../domain/dates';
+import { defaultSplits, effectiveSplits, mealStatus, mealTargets } from '../../domain/meals';
 import { proteinFillers, remainingForDay } from '../../domain/nutrition';
-import type { FoodItem } from '../../domain/types';
+import type { FoodItem, FoodLog, NutritionTargets } from '../../domain/types';
+import { RecipesTab } from '../recipes/Recipes';
+import { FoodsTab } from './FoodsTab';
+import { STATUS_TEXT } from './MealSheet';
+import { UNIT_LABEL, suggestMeal } from './FoodSheet';
 
 export function MacroBars({ totals, targets }: { totals: DayTotals; targets: NutritionTargets | null }) {
   if (!targets) return null;
@@ -73,166 +77,174 @@ export function KcalHeadline({ totals, targets }: { totals: DayTotals; targets: 
   );
 }
 
+type NutritionTab = 'day' | 'meals' | 'recipes' | 'foods';
+const TAB_KEY = 'ca27-nutrition-tab';
+
+function SplitsSheet({ onClose }: { onClose: () => void }) {
+  const settings = useSettingsOrDefault();
+  const save = useSave();
+  const [vals, setVals] = useState<Record<string, string>>(() => Object.fromEntries(Object.entries(effectiveSplits(settings.meals, settings.mealSplits)).map(([k, v]) => [k, String(v)])));
+  const total = settings.meals.reduce((a, m) => a + (parseDecimal(vals[m.label] ?? '') ?? 0), 0);
+  return (
+    <Sheet open onClose={onClose} title="Metas por refeição"
+      footer={<div className="space-y-2">
+        <p className={cx('num text-center text-sm font-semibold', Math.abs(total - 100) < 0.5 ? 'text-ok' : 'text-warn')}>Total: {fmt(total, 0)}% {Math.abs(total - 100) < 0.5 ? '✔' : '(precisa somar 100%)'}</p>
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={() => setVals(Object.fromEntries(Object.entries(defaultSplits(settings.meals)).map(([k, v]) => [k, String(v)])))}>Padrão</Button>
+          <Button className="flex-1" disabled={Math.abs(total - 100) >= 0.5} onClick={async () => {
+            const ok = await save(() => updateSettings({ mealSplits: Object.fromEntries(settings.meals.map((m) => [m.label, parseDecimal(vals[m.label] ?? '') ?? 0])) }).then(() => true), 'Divisão das metas salva');
+            if (ok) onClose();
+          }}>Salvar</Button>
+        </div>
+      </div>}>
+      <p className="mb-3 text-sm text-muted">Quanto da meta do dia (kcal e macros) cabe em cada refeição. Use para saber quanto comer em cada uma — inclusive de uma receita.</p>
+      <ul className="space-y-2">
+        {settings.meals.map((m) => (
+          <li key={m.label} className="flex items-center gap-3 rounded-2xl border border-line p-3">
+            <span className="text-accent"><MealIcon label={m.label} /></span>
+            <span className="min-w-0 flex-1"><span className="block font-semibold">{m.label}</span><span className="text-xs text-muted">{m.time}</span></span>
+            <TextInput aria-label={`Percentual de ${m.label}`} inputMode="decimal" value={vals[m.label] ?? ''} onChange={(e) => setVals({ ...vals, [m.label]: e.target.value })} className="num !w-20 text-right" />
+            <span className="text-sm text-muted">%</span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-3 text-xs text-muted">Refeições e horários são editados em Perfil → Refeições.</p>
+    </Sheet>
+  );
+}
+
+function DateNav({ day, today, setDate }: { day: string; today: string; setDate: (d: string | null) => void }) {
+  return (
+    <div className="flex items-center gap-2">
+      <Button variant="secondary" aria-label="Dia anterior" onClick={() => setDate(addDays(day, -1))}>‹</Button>
+      <TextInput type="date" aria-label="Escolher dia" value={day} onChange={(e) => e.target.value && setDate(e.target.value)} className="flex-1 text-center" />
+      <Button variant="secondary" aria-label="Próximo dia" onClick={() => setDate(addDays(day, 1))}>›</Button>
+      {day !== today && <Button variant="ghost" onClick={() => setDate(null)}>Hoje</Button>}
+    </div>
+  );
+}
+
 export function Nutrition() {
   const today = useToday();
   const settings = useSettingsOrDefault();
+  const profile = useProfile();
   const { open } = useSheets();
-  const save = useSave();
-  const { show } = useToast();
+  const [tab, setTabState] = useState<NutritionTab>(() => { try { return (sessionStorage.getItem(TAB_KEY) as NutritionTab) || 'meals'; } catch { return 'meals'; } });
+  const setTab = (t: NutritionTab) => { setTabState(t); try { sessionStorage.setItem(TAB_KEY, t); } catch { /* sem armazenamento */ } };
   const [date, setDate] = useState<string | null>(null);
+  const [splitsOpen, setSplitsOpen] = useState(false);
   const day = date ?? today;
   const logs = useLiveQuery(() => db.foodLogs.where('date').equals(day).toArray(), [day], [] as FoodLog[]);
   const weekLogs = useLiveQuery(() => db.foodLogs.where('date').between(addDays(today, -6), today, true, true).toArray(), [today]) ?? [];
   const water = useLiveQuery(() => db.waterEntries.where('date').equals(day).toArray(), [day]) ?? [];
   const targetsAll = useLiveQuery(() => db.targets.toArray(), []) ?? [];
-  const favorites = useLiveQuery(() => db.favoriteMeals.toArray(), []) ?? [];
   const foods = useLiveQuery(() => db.foodItems.toArray(), []) ?? [];
+  const weights = useLiveQuery(() => db.weights.toArray(), []) ?? [];
   const tg = targetsForDate(targetsAll, day);
   const totals = dayTotals(logs);
   const waterTotal = water.reduce((s, w) => s + w.amountMl, 0);
-  const [favFor, setFavFor] = useState<string | null>(null);
-  const [favName, setFavName] = useState('');
-  const [useFavFor, setUseFavFor] = useState<string | null>(null);
-  const [catalogOpen, setCatalogOpen] = useState(false);
-  const [delFood, setDelFood] = useState<string | null>(null);
-
-  const mealLabels = useMemo(() => {
-    const labels = settings.meals.map((m) => m.label);
-    for (const l of logs) if (!labels.includes(l.mealLabel)) labels.push(l.mealLabel);
-    if (!labels.includes('Extras')) labels.push('Extras');
-    return labels;
-  }, [settings.meals, logs]);
+  const current = latestWeight(weights);
+  const weightNow = current?.weightKg ?? profile?.startWeightKg;
+  const bmiNow = weightNow && profile ? bmi(weightNow, profile.heightCm) : null;
+  const mts = tg ? mealTargets(settings.meals, tg, settings.mealSplits) : [];
+  const extraLabels = [...new Set(logs.map((l) => l.mealLabel))].filter((l) => !settings.meals.some((m) => m.label === l));
 
   const last7 = Array.from({ length: 7 }, (_, i) => addDays(today, -6 + i));
   const byDay = new Map<string, FoodLog[]>();
   for (const l of weekLogs) byDay.set(l.date, [...(byDay.get(l.date) ?? []), l]);
   const adh = nutritionAdherence(last7, byDay, targetsAll);
-  const mealTime = (label: string) => settings.meals.find((m) => m.label === label)?.time ?? '12:00';
 
   return (
     <Page title="Alimentação" subtitle={formatLongBR(day)}
-      action={<Button onClick={() => open({ kind: 'food', date: day })}>+ Alimento</Button>}>
-      <Button variant="secondary" className="w-full" onClick={() => open({ kind: 'plate', date: day })}>🍽️ Montar prato com meus alimentos</Button>
-      <div className="flex items-center gap-2">
-        <Button variant="secondary" aria-label="Dia anterior" onClick={() => setDate(addDays(day, -1))}>‹</Button>
-        <TextInput type="date" aria-label="Escolher dia" value={day} onChange={(e) => e.target.value && setDate(e.target.value)} className="flex-1 text-center" />
-        <Button variant="secondary" aria-label="Próximo dia" onClick={() => setDate(addDays(day, 1))}>›</Button>
-        {day !== today && <Button variant="ghost" onClick={() => setDate(null)}>Hoje</Button>}
+      action={<Button className="!px-3" onClick={() => open({ kind: 'food', date: day })}>+ Alimento</Button>}>
+      <div className="grid grid-cols-3 gap-2">
+        <StatTile label="Peso" value={fmt(weightNow, weightNow && weightNow % 1 ? 1 : 0)} unit="kg" sub={current ? undefined : 'referência'} />
+        <StatTile label="Altura" value={profile ? fmtInt(profile.heightCm) : '—'} unit="cm" />
+        <StatTile label="IMC" value={fmt(bmiNow)} tone="accent" sub="não mede composição" />
       </div>
+      <Tabs label="Seções da alimentação" value={tab} onChange={setTab} options={[{ value: 'day', label: 'Dia' }, { value: 'meals', label: 'Refeições' }, { value: 'recipes', label: 'Receitas' }, { value: 'foods', label: 'Alimentos' }]} />
 
-      <Card title="Total do dia">
-        <KcalHeadline totals={totals} targets={tg} />
-        <div className="mt-4"><MacroBars totals={totals} targets={tg} /></div>
-        {tg && totals.hasEntries && <CloseTheDay totals={totals} targets={tg} foods={foods} />}
-        {tg && <p className="mt-3 text-xs text-muted">Meta vigente desde {formatBR(tg.effectiveDate)}: {fmtInt(tg.caloriesKcal)} kcal · P {fmtInt(tg.proteinG)} g · C {fmtInt(tg.carbsG)} g · G {fmtInt(tg.fatG)} g.</p>}
-      </Card>
+      {(tab === 'day' || tab === 'meals') && <DateNav day={day} today={today} setDate={setDate} />}
 
-      {mealLabels.map((label) => {
-        const items = logs.filter((l) => l.mealLabel === label).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-        const t = dayTotals(items);
-        const ref = settings.meals.find((m) => m.label === label);
-        return (
-          <Card key={label} title={<>{label}{ref?.time && <span className="ml-1 font-normal normal-case">· {ref.time}</span>}</>}
-            action={<span className="num text-xs text-muted">{t.hasEntries ? `${fmtInt(t.kcal)} kcal · P ${fmtInt(t.proteinG)} g` : ''}</span>}>
-            {items.length > 0 ? (
-              <ul className="mb-2 divide-y divide-line">
-                {items.map((l) => (
-                  <li key={l.id}>
-                    <button type="button" className="flex w-full items-center justify-between gap-2 py-2 text-left" onClick={() => open({ kind: 'food', log: l })} aria-label={`Editar ${l.description}`}>
-                      <span className="min-w-0 text-sm">
-                        <span className="block truncate">{l.description}</span>
-                        <span className="block text-xs text-muted">{fmt(l.amount, l.amount % 1 ? 1 : 0)} {UNIT_LABEL[l.unit]}{l.preparation ? ` · ${PREP_LABEL[l.preparation]}` : ''}</span>
-                      </span>
-                      <span className="num shrink-0 text-right text-xs">
-                        {l.kcal !== undefined ? <span className="block font-semibold text-fg">{fmtInt(l.kcal)} kcal{l.nutritionIsEstimated ? '*' : ''}</span> : <span className="block text-warn">sem dados</span>}
-                        {l.proteinG !== undefined && <span className="block text-muted">P {fmt(l.proteinG)} · C {fmt(l.carbsG)} · G {fmt(l.fatG)}</span>}
-                      </span>
+      {tab === 'meals' && (
+        <Card title={weekdayName(weekday(day))} subtitle={day === today ? 'Refeições de hoje' : formatBR(day)} icon={<MealIcon label="almoço" />}
+          action={<Button variant="ghost" className="!px-2 !text-[12px]" onClick={() => setSplitsOpen(true)}>Metas %</Button>}>
+          <ul className="space-y-2.5">
+            {[...settings.meals.map((m) => m.label), ...extraLabels, 'Extras'].filter((v, i, a) => a.indexOf(v) === i).map((label) => {
+              const slot = settings.meals.find((m) => m.label === label);
+              const mt = mts.find((m) => m.label === label);
+              const items = logs.filter((l) => l.mealLabel === label);
+              if (label === 'Extras' && !items.length) return null;
+              const t = dayTotals(items);
+              const st = mealStatus(t.kcal, t.hasEntries, mt?.kcal ?? 0);
+              const isNext = day === today && slot && !t.hasEntries && slot.label === suggestMeal(settings.meals, timeInTimeZone(new Date(), settings.timeZone));
+              return (
+                <li key={label}>
+                  <button type="button" onClick={() => open({ kind: 'meal', date: day, meal: label })} aria-label={`${label}: ${STATUS_TEXT[st]}${t.hasEntries ? `, ${fmtInt(t.kcal)} kcal` : ''}`}
+                    className={cx('flex w-full items-center gap-4 rounded-3xl border px-4 py-4 text-left transition', isNext ? 'border-accent/50 bg-card2' : 'border-line')}>
+                    <span className={cx('flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border', isNext || t.hasEntries ? 'border-accent/40 text-accent' : 'border-line text-muted')}><MealIcon label={label} /></span>
+                    <span className="min-w-0 flex-1">
+                      <span className="display block text-[21px] font-semibold leading-tight">{label}</span>
+                      <span className="mt-0.5 flex items-center gap-1.5 text-muted"><IconClock /><span className="num text-sm font-semibold tracking-[0.15em]">{slot?.time ?? '—'}</span></span>
+                      {mt && (
+                        <span className="mt-2 block">
+                          <span className="num text-xs"><b className="text-fg">{t.hasEntries ? fmtInt(t.kcal) : 0}</b><span className="text-muted"> / {fmtInt(mt.kcal)} kcal · P {t.hasEntries ? fmtInt(t.proteinG) : 0}/{fmtInt(mt.proteinG)} g</span></span>
+                          <span className="mt-1 block"><ProgressBar label={`Calorias de ${label}`} value={t.kcal} max={mt.kcal} tone={st === 'above' ? 'warn' : 'accent'} valueText={`${fmtInt(t.kcal)} de ${fmtInt(mt.kcal)} kcal`} /></span>
+                        </span>
+                      )}
+                    </span>
+                    <span className={isNext ? 'text-accent' : 'text-muted'}><IconChevron /></span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          {tg && <p className="mt-3 text-xs text-muted">Metas do dia ({fmtInt(tg.caloriesKcal)} kcal · P {fmtInt(tg.proteinG)} g) divididas entre as refeições. Toque em “Metas %” para ajustar.</p>}
+        </Card>
+      )}
+
+      {tab === 'day' && (
+        <>
+          <Card title="Total do dia" icon="🔥">
+            <KcalHeadline totals={totals} targets={tg} />
+            <div className="mt-4"><MacroBars totals={totals} targets={tg} /></div>
+            {tg && totals.hasEntries && <CloseTheDay totals={totals} targets={tg} foods={foods} />}
+            {tg && <p className="mt-3 text-xs text-muted">Meta vigente desde {formatBR(tg.effectiveDate)}: {fmtInt(tg.caloriesKcal)} kcal · P {fmtInt(tg.proteinG)} g · C {fmtInt(tg.carbsG)} g · G {fmtInt(tg.fatG)} g.</p>}
+          </Card>
+          <Button variant="secondary" className="w-full" onClick={() => open({ kind: 'plate', date: day })}><IconPlate /> Montar prato com meus alimentos</Button>
+          <Card title="Água" icon="💧" action={<Button variant="ghost" onClick={() => open({ kind: 'water', date: day })}>+ Água</Button>}>
+            <p className="num text-2xl font-bold">{fmtInt(waterTotal)} <span className="text-sm font-medium text-muted">ml {tg ? `· referência ${fmtInt(tg.waterMinMl)}–${fmtInt(tg.waterMaxMl)} ml` : ''}</span></p>
+            {tg && <div className="mt-2"><ProgressBar label="Água" value={waterTotal} max={tg.waterMinMl} valueText={`${fmtInt(waterTotal)} ml`} /></div>}
+          </Card>
+          <Card title="Últimos 7 dias" icon="📅">
+            <ul className="grid grid-cols-7 gap-1 text-center">
+              {last7.map((d) => {
+                const t = dayTotals(byDay.get(d) ?? []);
+                const tgd = targetsForDate(targetsAll, d);
+                const hit = t.hasEntries && tgd && t.proteinG >= tgd.proteinG;
+                return (
+                  <li key={d}>
+                    <button type="button" onClick={() => setDate(d)} className={cx('w-full rounded-xl border px-0.5 py-2 text-xs', d === day ? 'border-accent' : 'border-line')}
+                      aria-label={`${formatBR(d)}: ${t.hasEntries ? `${fmtInt(t.kcal)} kcal registradas` : 'sem registro'}`}>
+                      <span className="block text-muted">{weekdayShort(weekday(d))}</span>
+                      <span className="block text-muted">{formatShortBR(d)}</span>
+                      <span className={cx('num mt-1 block font-semibold', !t.hasEntries && 'text-muted')}>{t.hasEntries ? fmtInt(t.kcal) : '—'}</span>
+                      <span aria-hidden className="block">{t.hasEntries ? (hit ? '💪' : '·') : ''}</span>
                     </button>
                   </li>
-                ))}
-              </ul>
-            ) : ref?.reference ? <p className="mb-2 text-xs text-muted">Referência (não validada): {ref.reference}</p> : null}
-            <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" className="!min-h-9 !px-3 text-sm" onClick={() => open({ kind: 'food', date: day, meal: label })}>+ Adicionar</Button>
-              <Button variant="ghost" className="!min-h-9 !px-3 text-sm" onClick={() => open({ kind: 'plate', date: day, meal: label })}>🍽️ Prato</Button>
-              <Button variant="ghost" className="!min-h-9 !px-3 text-sm" onClick={async () => {
-                const n = await save(() => copyMeal(addDays(day, -1), day, label, localDateTimeToISO(day, mealTime(label))));
-                if (n !== undefined) show(n ? `${n} item(ns) copiado(s) de ontem` : 'Ontem não há itens nesta refeição', n ? 'ok' : 'info');
-              }}>Copiar de ontem</Button>
-              {items.length > 0 && <Button variant="ghost" className="!min-h-9 !px-3 text-sm" onClick={() => { setFavFor(label); setFavName(`${label} favorito`); }}>★ Salvar favorita</Button>}
-              {favorites.length > 0 && <Button variant="ghost" className="!min-h-9 !px-3 text-sm" onClick={() => setUseFavFor(label)}>Usar favorita</Button>}
-            </div>
+                );
+              })}
+            </ul>
+            <p className="mt-3 text-sm">Dias registrados: <b>{adh.daysLogged} de {adh.daysInPeriod}</b> · meta de proteína: <b>{adh.daysProteinHit} de {adh.daysLogged}</b> dias registrados {adh.daysLogged > 0 && <>· kcal na faixa ±10%: <b>{adh.daysWithinKcal} de {adh.daysLogged}</b></>}</p>
+            <p className="text-xs text-muted">“—” = sem registro (não é 0 kcal). 💪 = meta de proteína atingida.</p>
           </Card>
-        );
-      })}
+          <Alert tone="info">Sem moralizar alimentos: degustações, doces, bebidas, óleos e molhos entram em “Extras” como qualquer outro registro.</Alert>
+        </>
+      )}
 
-      <Card title="Água" action={<Button variant="ghost" onClick={() => open({ kind: 'water', date: day })}>+ Água</Button>}>
-        <p className="num text-2xl font-bold">{fmtInt(waterTotal)} <span className="text-sm font-medium text-muted">ml {tg ? `· referência ${fmtInt(tg.waterMinMl)}–${fmtInt(tg.waterMaxMl)} ml` : ''}</span></p>
-        {tg && <div className="mt-2"><ProgressBar label="Água" value={waterTotal} max={tg.waterMinMl} valueText={`${fmtInt(waterTotal)} ml`} /></div>}
-      </Card>
-
-      <Card title="Últimos 7 dias">
-        <ul className="grid grid-cols-7 gap-1 text-center">
-          {last7.map((d) => {
-            const t = dayTotals(byDay.get(d) ?? []);
-            const tgd = targetsForDate(targetsAll, d);
-            const hit = t.hasEntries && tgd && t.proteinG >= tgd.proteinG;
-            return (
-              <li key={d}>
-                <button type="button" onClick={() => setDate(d)} className={cx('w-full rounded-lg border px-0.5 py-2 text-xs', d === day ? 'border-accent' : 'border-line')}
-                  aria-label={`${formatBR(d)}: ${t.hasEntries ? `${fmtInt(t.kcal)} kcal registradas` : 'sem registro'}`}>
-                  <span className="block text-muted">{weekdayShort(weekday(d))}</span>
-                  <span className="block text-muted">{formatShortBR(d)}</span>
-                  <span className={cx('num mt-1 block font-semibold', !t.hasEntries && 'text-muted')}>{t.hasEntries ? fmtInt(t.kcal) : '—'}</span>
-                  <span aria-hidden className="block">{t.hasEntries ? (hit ? '💪' : '·') : ''}</span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-        <p className="mt-3 text-sm">Dias registrados: <b>{adh.daysLogged} de {adh.daysInPeriod}</b> · meta de proteína: <b>{adh.daysProteinHit} de {adh.daysLogged}</b> dias registrados {adh.daysLogged > 0 && <>· kcal na faixa ±10%: <b>{adh.daysWithinKcal} de {adh.daysLogged}</b></>}</p>
-        <p className="text-xs text-muted">“—” = sem registro (não é 0 kcal). 💪 = meta de proteína atingida.</p>
-      </Card>
-
-      <Card title="Meu catálogo de alimentos" action={<Button variant="ghost" onClick={() => setCatalogOpen(!catalogOpen)}>{catalogOpen ? 'Fechar' : `Ver (${foods.length})`}</Button>}>
-        <p className="text-sm text-muted">{foods.filter((f) => f.builtin).length} alimentos com valores das tabelas oficiais <b>TACO (Unicamp)</b> e <b>IBGE (POF 2008-2009)</b>, por 100 g do alimento pronto. ★ = seu dia a dia. Para marca ou preparo diferente, crie a sua versão ao registrar.</p>
-        {catalogOpen && (
-          <ul className="mt-3 divide-y divide-line">
-            {[...foods].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')).map((f) => (
-              <li key={f.id} className="flex items-center justify-between gap-2 py-2 text-sm">
-                <span className="min-w-0"><span className="block truncate">{f.name}</span><span className="block text-xs text-muted">{f.favorite ? '★ ' : ''}{sourceTag(f)} · por {fmt(f.referenceAmount, 0)} {UNIT_LABEL[f.referenceUnit]} · {hasAnyNutrition(f) ? `${fmtInt(f.kcalPerReference)} kcal · P ${fmt(f.proteinGPerReference)} · C ${fmt(f.carbsGPerReference)} · G ${fmt(f.fatGPerReference)}` : 'sem dados'}</span></span>
-                {!f.builtin && <button type="button" className="min-h-9 shrink-0 px-2 text-danger" onClick={() => setDelFood(f.id)} aria-label={`Excluir ${f.name} do catálogo`}>Excluir</button>}
-              </li>
-            ))}
-          </ul>
-        )}
-        <p className="mt-3 text-xs text-muted">Preferências: {settings.foodPreferences}</p>
-      </Card>
-
-      <Alert tone="info">Sem moralizar alimentos: degustações, doces, bebidas, óleos e molhos entram em “Extras” como qualquer outro registro.</Alert>
-
-      <Sheet open={!!favFor} onClose={() => setFavFor(null)} title="Salvar refeição favorita"
-        footer={<Button className="w-full" onClick={async () => { if (favFor) { const n = await save(() => saveFavoriteMeal(favName.trim() || favFor, day, favFor), 'Favorita salva'); if (n !== undefined) setFavFor(null); } }}>Salvar</Button>}>
-        <Field label="Nome da favorita">{(id) => <TextInput id={id} value={favName} onChange={(e) => setFavName(e.target.value)} />}</Field>
-      </Sheet>
-      <Sheet open={!!useFavFor} onClose={() => setUseFavFor(null)} title={`Usar favorita em ${useFavFor ?? ''}`}>
-        <ul className="space-y-2">
-          {favorites.map((f) => (
-            <li key={f.id} className="flex items-center gap-2">
-              <Button variant="secondary" className="flex-1 justify-between" onClick={async () => {
-                if (!useFavFor) return;
-                const n = await save(() => applyFavoriteMeal(f.id, day, useFavFor, localDateTimeToISO(day, mealTime(useFavFor))), `“${f.name}” adicionada`);
-                if (n !== undefined) setUseFavFor(null);
-              }}><span>{f.name}</span><span className="text-xs text-muted">{f.items.length} itens</span></Button>
-              <button type="button" className="min-h-11 px-2 text-danger" aria-label={`Excluir favorita ${f.name}`} onClick={() => save(() => db.favoriteMeals.delete(f.id), 'Favorita excluída')}>🗑️</button>
-            </li>
-          ))}
-        </ul>
-      </Sheet>
-      <ConfirmDialog open={!!delFood} title="Excluir alimento do catálogo?" danger confirmLabel="Excluir" onCancel={() => setDelFood(null)}
-        onConfirm={async () => { if (delFood) { await save(() => deleteFoodItem(delFood), 'Alimento excluído do catálogo'); setDelFood(null); } }}>
-        <p>Os registros já feitos no diário continuam com seus valores.</p>
-      </ConfirmDialog>
+      {tab === 'recipes' && <RecipesTab day={day} />}
+      {tab === 'foods' && <FoodsTab day={day} />}
+      {splitsOpen && <SplitsSheet onClose={() => setSplitsOpen(false)} />}
     </Page>
   );
 }

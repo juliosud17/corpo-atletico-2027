@@ -1,4 +1,7 @@
 @import "tailwindcss";
+@import "@fontsource/oswald/latin-500.css";
+@import "@fontsource/oswald/latin-600.css";
+@import "@fontsource/oswald/latin-700.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -12,30 +15,38 @@
   --color-accent: var(--accent);
   --color-accent-fg: var(--accent-fg);
   --color-accent-soft: var(--accent-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
   --color-warn: var(--warn);
   --color-warn-soft: var(--warn-soft);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
   --color-plan: var(--plan);
   --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Oswald", "Arial Narrow", ui-sans-serif, sans-serif;
 }
 
+/* Escuro (padrão): preto grafite, cartões arredondados, laranja nos destaques */
 :root, .dark {
-  --bg: #0f1418; --card: #182027; --card2: #212b33; --fg: #eef2f5; --muted: #9aa7b2; --line: #2c3842;
-  --accent: #22c55e; --accent-fg: #06210f; --accent-soft: rgba(34,197,94,.14);
-  --warn: #f5b942; --warn-soft: rgba(245,185,66,.14); --danger: #f87171; --danger-soft: rgba(248,113,113,.15);
-  --plan: #9ca3af;
+  --bg: #0b0b0c; --card: #161618; --card2: #212124; --fg: #f4f4f5; --muted: #a1a1aa; --line: #2a2a2e;
+  --accent: #f97316; --accent-fg: #160800; --accent-soft: rgba(249,115,22,.14);
+  --ok: #22c55e; --ok-soft: rgba(34,197,94,.14);
+  --warn: #fbbf24; --warn-soft: rgba(251,191,36,.13); --danger: #f87171; --danger-soft: rgba(248,113,113,.15);
+  --plan: #a1a1aa;
   color-scheme: dark;
 }
-.dark.accent-blue, :root.accent-blue { --accent: #38bdf8; --accent-fg: #04202e; --accent-soft: rgba(56,189,248,.15); }
+:root.accent-green, .dark.accent-green { --accent: #22c55e; --accent-fg: #06210f; --accent-soft: rgba(34,197,94,.14); }
+:root.accent-blue, .dark.accent-blue { --accent: #38bdf8; --accent-fg: #04202e; --accent-soft: rgba(56,189,248,.15); }
 
 .light {
-  --bg: #f3f5f7; --card: #ffffff; --card2: #eef1f4; --fg: #111827; --muted: #5b6672; --line: #dde3e8;
-  --accent: #15803d; --accent-fg: #ffffff; --accent-soft: rgba(21,128,61,.1);
+  --bg: #f4f4f5; --card: #ffffff; --card2: #f0f0f2; --fg: #111113; --muted: #5b5b66; --line: #e2e2e7;
+  --accent: #c2410c; --accent-fg: #ffffff; --accent-soft: rgba(234,88,12,.1);
+  --ok: #15803d; --ok-soft: rgba(21,128,61,.1);
   --warn: #a15c00; --warn-soft: rgba(217,119,6,.12); --danger: #b91c1c; --danger-soft: rgba(220,38,38,.1);
   --plan: #6b7280;
   color-scheme: light;
 }
+.light.accent-green { --accent: #15803d; --accent-fg: #ffffff; --accent-soft: rgba(21,128,61,.1); }
 .light.accent-blue { --accent: #0369a1; --accent-fg: #ffffff; --accent-soft: rgba(3,105,161,.1); }
 
 html, body, #root { min-height: 100%; }
@@ -45,9 +56,10 @@ body {
   overflow-x: hidden;
 }
 .num { font-variant-numeric: tabular-nums; }
-:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
+.display { font-family: var(--font-display); text-transform: uppercase; letter-spacing: .01em; }
+.eyebrow { text-transform: uppercase; letter-spacing: .16em; font-size: .7rem; font-weight: 600; color: var(--muted); }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 10px; }
 input, select, textarea, button { font: inherit; color: inherit; }
-/* iOS não dá zoom em inputs com fonte ≥ 16px */
 input, select, textarea { font-size: 16px; }
 .pb-safe { padding-bottom: calc(env(safe-area-inset-bottom) + 0.5rem); }
 .pt-safe { padding-top: env(safe-area-inset-top); }

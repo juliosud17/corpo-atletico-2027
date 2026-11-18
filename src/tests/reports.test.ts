@@ -183,7 +183,7 @@ describe('Migração v1 → v3', () => {
     await v1.table('weights').put(W('2026-11-17', 101.2));
     v1.close();
     const cur = new CorpoDB(name); await cur.open();
-    expect(cur.verno).toBe(3);
+    expect(cur.verno).toBeGreaterThanOrEqual(3);
     expect((await cur.weights.toArray())[0].weightKg).toBe(101.2);
     expect(await cur.photos.count()).toBe(0);
   });

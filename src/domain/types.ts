@@ -142,6 +142,32 @@ export interface FoodItem {
 
 export interface FoodPortion { label: string; amount: number }
 
+export interface RecipeIngredient {
+  id: ID;
+  /** Linha original (como veio da internet ou digitada). */
+  text: string;
+  foodId?: ID;
+  /** Quantidade na unidade de referência do alimento (g, ml ou unid.). Ausente = falta informar. */
+  amount?: number;
+  /** Ingrediente sem calorias relevantes (sal, água, temperos a gosto). */
+  ignored?: boolean;
+}
+
+export interface Recipe {
+  id: ID;
+  name: string;
+  /** Rendimento em porções (como a receita indica ou como você divide). */
+  servings: number;
+  /** Peso do preparo pronto (g), opcional — permite calcular por grama. */
+  cookedWeightG?: number;
+  ingredients: RecipeIngredient[];
+  sourceUrl?: string;
+  notes?: string;
+  favorite?: boolean;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
 export interface FoodLog {
   id: ID;
   /** Dia do diário ao qual o item pertence (ex.: ceia 00h15 pode contar no dia anterior). */
@@ -159,6 +185,8 @@ export interface FoodLog {
   fatG?: number;
   /** true quando kcal foi estimada por P×4 + C×4 + G×9 (não veio do rótulo). */
   nutritionIsEstimated: boolean;
+  /** Registro feito a partir de uma receita. */
+  recipeId?: ID;
   note?: string;
   createdAt: ISODateTime;
   updatedAt: ISODateTime;
@@ -313,7 +341,11 @@ export interface Settings {
   id: 'app';
   onboardingDone: boolean;
   theme: 'dark' | 'light' | 'system';
-  accent: 'green' | 'blue';
+  accent: 'orange' | 'green' | 'blue';
+  /** Versão do visual aplicada (2 = estilo laranja/condensado). */
+  designVersion?: number;
+  /** Percentual das metas diárias por refeição (rótulo → %). */
+  mealSplits?: Record<string, number>;
   timeZone: string;
   showWeight: boolean;
   showCalories: boolean;
@@ -352,6 +384,7 @@ export interface BackupFile {
   completions: HabitCompletion[];
   settings: Settings | null;
   /** Opcional: metadados das fotos (sempre exportados) e conteúdo em base64 (só se o usuário pedir). */
+  recipes?: Recipe[];
   photos?: ProgressPhoto[];
   photoBlobs?: { id: ID; type: string; base64: string; thumbBase64?: string }[];
 }

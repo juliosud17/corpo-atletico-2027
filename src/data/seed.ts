@@ -77,7 +77,7 @@ export function buildWorkoutPlans(): { plans: WorkoutPlan[]; exercises: Exercise
 
 export function defaultSettings(now: string): Settings {
   return {
-    id: 'app', onboardingDone: false, theme: 'dark', accent: 'green', timeZone: DEFAULT_TZ,
+    id: 'app', onboardingDone: false, theme: 'dark', accent: 'orange', designVersion: 2, timeZone: DEFAULT_TZ,
     showWeight: true, showCalories: true, showWorkouts: true, showPhotos: false, trackingPaused: false,
     meals: INITIAL_MEALS, foodPreferences: '',
     updatedAt: now,

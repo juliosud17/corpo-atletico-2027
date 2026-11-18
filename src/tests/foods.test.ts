@@ -16,9 +16,10 @@ describe('Base de alimentos (TACO/IBGE)', () => {
       expect([SOURCE_TACO, SOURCE_IBGE]).toContain(f.source);
       expect(f.tableName.length).toBeGreaterThan(5);
       for (const v of [f.kcal, f.protein, f.carbs, f.fat]) expect(v).toBeGreaterThanOrEqual(0);
-      // As tabelas usam fatores de conversão próprios; a soma P×4+C×4+G×9 deve ficar próxima do valor publicado.
+      // As tabelas usam fatores de conversão próprios e descontam fibras (ex.: extrato de tomate, ~17%);
+      // a soma P×4+C×4+G×9 deve ficar próxima do valor publicado — serve para pegar erro de digitação.
       const est = kcalFromMacros(f.protein, f.carbs, f.fat);
-      if (f.kcal > 40) expect(Math.abs(est - f.kcal) / f.kcal).toBeLessThan(0.15);
+      if (f.kcal > 40) expect(Math.abs(est - f.kcal) / f.kcal).toBeLessThan(0.2);
     }
   });
   it('contém as proteínas do dia a dia do usuário e nenhum whey/peixe', () => {

@@ -10,7 +10,7 @@ import { hasAnyNutrition } from '../domain/calculations';
 import { monthKey, todayISO, weekStartMonday } from '../domain/dates';
 import type {
   BackupFile, BodyMeasurement, Cadence, ExercisePrescription, ExerciseSet, FoodItem, FoodLog, GoalMilestone, HabitDefinition, ISODate,
-  NutritionTargets, PhotoBlob, ProgressPhoto, RecoveryEntry, Settings, UserProfile, WaterEntry, WeightEntry, WorkoutPlan, WorkoutSession,
+  NutritionTargets, PhotoBlob, ProgressPhoto, Recipe, RecoveryEntry, Settings, UserProfile, WaterEntry, WeightEntry, WorkoutPlan, WorkoutSession,
 } from '../domain/types';
 import { elapsedMs } from '../domain/workouts';
 import { base64ToBuffer, bufferToBase64 } from '../domain/binary';
@@ -355,6 +355,7 @@ export async function exportBackup(database: CorpoDB = db, opts: { includePhotos
     habits: await database.habits.toArray(),
     completions: await database.completions.toArray(),
     settings: (await database.settings.get('app')) ?? null,
+    recipes: await database.recipes.toArray(),
     photos: await database.photos.toArray(),
     photoBlobs: opts.includePhotos
       ? (await database.photoBlobs.toArray()).map((b) => ({ id: b.id, type: b.type, base64: bufferToBase64(b.data), thumbBase64: b.thumb ? bufferToBase64(b.thumb) : undefined }))
@@ -390,6 +391,7 @@ export async function importBackup(data: BackupFile, mode: ImportMode, database:
     await database.recovery.bulkPut(data.recovery);
     await database.habits.bulkPut(data.habits);
     await database.completions.bulkPut(data.completions);
+    if (data.recipes?.length) await database.recipes.bulkPut(data.recipes);
     if (data.photos?.length) {
       const known = new Set([...(await database.photoBlobs.toCollection().primaryKeys()), ...(data.photoBlobs ?? []).map((b) => b.id)]);
       await database.photos.bulkPut(data.photos.filter((p) => known.has(p.blobKey)));
@@ -422,6 +424,16 @@ export async function deletePhoto(id: string, database: CorpoDB = db): Promise<v
     await database.photos.delete(id);
   });
 }
+
+// Receitas ------------------------------------------------------------------------------
+export async function saveRecipe(r: Omit<Recipe, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }, database: CorpoDB = db): Promise<string> {
+  const now = nowISO();
+  const existing = r.id ? await database.recipes.get(r.id) : undefined;
+  const entry: Recipe = { ...r, id: existing?.id ?? uid(), createdAt: existing?.createdAt ?? now, updatedAt: now };
+  await database.recipes.put(entry);
+  return entry.id;
+}
+export const deleteRecipe = (id: string, database: CorpoDB = db) => database.recipes.delete(id);
 
 // Revisões e lembretes (Fase 3) ------------------------------------------------------------------
 export async function logReview(date: ISODate, note: string | undefined, database: CorpoDB = db): Promise<void> {

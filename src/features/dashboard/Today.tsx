@@ -96,9 +96,9 @@ export function Today() {
   return (
     <main className="mx-auto w-full max-w-2xl px-4 pb-28 pt-safe">
       <header className="pb-4 pt-5">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-accent">Corpo Atlético 2027</p>
-        <h1 className="text-2xl font-extrabold tracking-tight">{greeting(hour)}, {profile.displayName}</h1>
-        <p className="text-sm text-muted first-letter:uppercase">{formatLongBR(today)}</p>
+        <p className="eyebrow !text-accent">Corpo Atlético 2027</p>
+        <h1 className="display mt-1 text-[32px] font-bold leading-none">{greeting(hour)}, {profile.displayName}</h1>
+        <p className="eyebrow mt-1.5">{formatLongBR(today)}</p>
       </header>
 
       <div className="space-y-4">
@@ -155,7 +155,7 @@ export function Today() {
         <section aria-label="Ações rápidas" className="grid grid-cols-3 gap-2">
           {quick.map((q) => (
             <button key={q.label} type="button" onClick={q.run}
-              className="flex min-h-20 flex-col items-center justify-center gap-1 rounded-2xl border border-line bg-card px-1 py-3 text-center text-xs font-medium hover:bg-card2">
+              className="flex min-h-24 flex-col items-center justify-center gap-1.5 rounded-3xl border border-line bg-card px-1 py-3 text-center text-[11px] font-semibold uppercase tracking-[0.08em] hover:border-accent/60">
               <span aria-hidden className="text-2xl">{q.icon}</span>{q.label}
             </button>
           ))}

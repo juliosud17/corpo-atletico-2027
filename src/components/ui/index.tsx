@@ -3,17 +3,62 @@ import { createContext, useCallback, useContext, useEffect, useId, useRef, useSt
 export function cx(...c: (string | false | null | undefined)[]) { return c.filter(Boolean).join(' '); }
 
 // Card ------------------------------------------------------------------------
-export function Card({ children, className, title, action }: { children: ReactNode; className?: string; title?: ReactNode; action?: ReactNode }) {
+export function Card({ children, className, title, subtitle, icon, action }: { children: ReactNode; className?: string; title?: ReactNode; subtitle?: ReactNode; icon?: ReactNode; action?: ReactNode }) {
   return (
-    <section className={cx('rounded-2xl bg-card border border-line p-4', className)}>
+    <section className={cx('rounded-3xl border border-line bg-card p-4 sm:p-5', className)}>
       {(title || action) && (
-        <div className="mb-3 flex items-center justify-between gap-2">
-          {title && <h2 className="text-sm font-semibold uppercase tracking-wide text-muted">{title}</h2>}
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            {icon && <span aria-hidden className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-accent-soft text-xl text-accent">{icon}</span>}
+            <div className="min-w-0">
+              {title && <h2 className="display text-[19px] font-semibold leading-tight text-fg">{title}</h2>}
+              {subtitle && <p className="eyebrow mt-0.5">{subtitle}</p>}
+            </div>
+          </div>
           {action}
         </div>
       )}
       {children}
     </section>
+  );
+}
+
+/** Bloco de número grande (estilo PESO / ALTURA / IMC). */
+export function StatTile({ label, value, unit, sub, tone }: { label: string; value: ReactNode; unit?: string; sub?: ReactNode; tone?: 'accent' }) {
+  return (
+    <div className="min-w-0 rounded-3xl border border-line bg-card px-2 py-3 text-center">
+      <p className="eyebrow">{label}</p>
+      <p className={cx('num mt-1 text-[26px] font-bold leading-none', tone === 'accent' && 'text-accent')}>{value}{unit && <span className="ml-0.5 text-sm font-medium text-muted">{unit}</span>}</p>
+      {sub && <p className="eyebrow mt-1 !text-[0.62rem]">{sub}</p>}
+    </div>
+  );
+}
+
+/** Abas grandes estilo “TREINO | PLANO | DIETA”. */
+export function Tabs<T extends string>({ value, onChange, options, label }: { value: T; onChange: (v: T) => void; options: { value: T; label: string }[]; label: string }) {
+  return (
+    <div role="tablist" aria-label={label} className="flex gap-1 overflow-x-auto rounded-2xl border border-line bg-card p-1">
+      {options.map((o) => (
+        <button key={o.value} type="button" role="tab" aria-selected={value === o.value} onClick={() => onChange(o.value)}
+          className={cx('min-h-11 flex-1 whitespace-nowrap rounded-xl px-1.5 text-[12.5px] font-semibold uppercase tracking-normal transition', value === o.value ? 'bg-card2 text-fg' : 'text-muted')}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Chips de filtro (ativo em laranja). */
+export function Chips<T extends string>({ value, onChange, options, label }: { value: T; onChange: (v: T) => void; options: { value: T; label: string }[]; label: string }) {
+  return (
+    <div role="group" aria-label={label} className="flex gap-2 overflow-x-auto pb-1">
+      {options.map((o) => (
+        <button key={o.value || 'all'} type="button" aria-pressed={value === o.value} onClick={() => onChange(o.value)}
+          className={cx('min-h-10 shrink-0 rounded-2xl border px-4 text-xs font-semibold uppercase tracking-[0.14em] transition', value === o.value ? 'border-accent bg-accent text-accent-fg' : 'border-line text-muted')}>
+          {o.label}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -28,7 +73,7 @@ export function Button({ variant = 'primary', className, children, ...rest }: Re
   };
   return (
     <button type="button" {...rest}
-      className={cx('inline-flex min-h-11 items-center justify-center gap-2 whitespace-nowrap rounded-xl px-4 py-2 text-[15px] transition disabled:opacity-50 disabled:cursor-not-allowed', styles[variant], className)}>
+      className={cx('inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl px-4 py-2 text-center text-[14px] font-semibold uppercase leading-tight tracking-[0.06em] transition disabled:opacity-50 disabled:cursor-not-allowed', styles[variant], className)}>
       {children}
     </button>
   );
@@ -47,7 +92,7 @@ export function Field({ label, hint, error, children, className }: { label: stri
   );
 }
 
-export const inputCls = 'w-full min-w-0 min-h-11 rounded-xl border border-line bg-card2 px-3 py-2 text-fg placeholder:text-muted/70 focus:border-accent outline-none';
+export const inputCls = 'w-full min-w-0 min-h-11 rounded-2xl border border-line bg-card2 px-3 py-2 text-fg placeholder:text-muted/70 focus:border-accent outline-none';
 
 export function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={cx(inputCls, props.className)} />;
@@ -75,10 +120,10 @@ export function Toggle({ checked, onChange, label, description }: { checked: boo
 // Segmented ------------------------------------------------------------------
 export function Segmented<T extends string>({ value, onChange, options, label }: { value: T; onChange: (v: T) => void; options: { value: T; label: string }[]; label: string }) {
   return (
-    <div role="radiogroup" aria-label={label} className="flex rounded-xl bg-card2 p-1 border border-line">
+    <div role="radiogroup" aria-label={label} className="flex rounded-2xl border border-line bg-card2 p-1">
       {options.map((o) => (
         <button key={o.value} type="button" role="radio" aria-checked={value === o.value} onClick={() => onChange(o.value)}
-          className={cx('flex-1 min-h-9 whitespace-nowrap rounded-lg px-1 text-sm transition', value === o.value ? 'bg-card text-fg font-semibold shadow-sm' : 'text-muted')}>
+          className={cx('flex-1 min-h-9 whitespace-nowrap rounded-xl px-1 text-[13px] font-semibold uppercase tracking-wide transition', value === o.value ? 'bg-accent text-accent-fg' : 'text-muted')}>
           {o.label}
         </button>
       ))}
@@ -115,7 +160,7 @@ export function Alert({ tone = 'warn', title, children, icon }: { tone?: 'warn' 
 
 export function EmptyState({ children, icon = '📝' }: { children: ReactNode; icon?: string }) {
   return (
-    <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-line px-4 py-6 text-center text-sm text-muted">
+    <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-line px-4 py-7 text-center text-sm text-muted">
       <span aria-hidden className="text-2xl">{icon}</span>
       <div>{children}</div>
     </div>
@@ -143,13 +188,13 @@ export function Sheet({ open, onClose, title, children, footer }: { open: boolea
     <div className="fixed inset-0 z-50 flex items-end justify-center sm:items-center" role="presentation">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} aria-hidden />
       <div ref={ref} role="dialog" aria-modal="true" aria-labelledby={titleId}
-        className="anim-up relative flex max-h-[92dvh] w-full max-w-lg flex-col rounded-t-3xl border border-line bg-card sm:rounded-3xl">
-        <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-3">
-          <h2 id={titleId} className="text-lg font-bold">{title}</h2>
-          <button type="button" onClick={onClose} aria-label="Fechar" className="flex h-10 w-10 items-center justify-center rounded-full text-xl text-muted hover:bg-card2">✕</button>
+        className="anim-up relative flex max-h-[92dvh] w-full max-w-lg flex-col rounded-t-[2rem] border border-line bg-card sm:rounded-[2rem]">
+        <div className="flex items-center justify-between gap-2 border-b border-line px-5 py-4">
+          <h2 id={titleId} className="display min-w-0 break-words text-[22px] font-semibold leading-tight">{title}</h2>
+          <button type="button" onClick={onClose} aria-label="Fechar" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-line text-lg text-fg hover:bg-card2">✕</button>
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">{children}</div>
-        {footer && <div className="pb-safe border-t border-line px-4 pt-3">{footer}</div>}
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>
+        {footer && <div className="pb-safe border-t border-line px-5 pt-3">{footer}</div>}
       </div>
     </div>
   );
@@ -212,10 +257,10 @@ export const useToast = () => useContext(ToastCtx);
 export function Page({ title, subtitle, children, action }: { title: string; subtitle?: ReactNode; children: ReactNode; action?: ReactNode }) {
   return (
     <main className="mx-auto w-full max-w-2xl px-4 pb-28 pt-safe">
-      <header className="flex items-end justify-between gap-3 pb-4 pt-5">
+      <header className="flex items-end justify-between gap-3 pb-4 pt-6">
         <div className="min-w-0">
-          <h1 className="text-2xl font-extrabold tracking-tight">{title}</h1>
-          {subtitle && <p className="text-sm text-muted">{subtitle}</p>}
+          <h1 className="display text-[32px] font-bold leading-none">{title}</h1>
+          {subtitle && <p className="eyebrow mt-1.5 first-letter:uppercase">{subtitle}</p>}
         </div>
         {action}
       </header>
