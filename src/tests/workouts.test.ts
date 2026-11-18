@@ -132,7 +132,7 @@ describe('Migração v1 → v2', () => {
     v1.close();
     const v2 = new CorpoDB(name);
     await v2.open();
-    expect(v2.verno).toBe(2);
+    expect(v2.verno).toBeGreaterThanOrEqual(2);
     expect((await v2.weights.get('w1'))?.weightKg).toBe(99.5);
     expect(await v2.exerciseSets.where('exerciseName').equals('Remada sentada').count()).toBe(1);
   });

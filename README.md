@@ -1,4 +1,4 @@
-# Corpo Atlético 2027 — Fases 1 e 2
+# Corpo Atlético 2027 — Fases 1, 2 e 3
 
 Aplicativo pessoal, mobile-first e offline para acompanhar peso, alimentação, água, hábitos e metas de uma transformação corporal gradual.
 
@@ -37,6 +37,7 @@ Testes de ponta a ponta (opcional, requer Python + Playwright e o `npm run previ
 pip install playwright && playwright install chromium
 python3 e2e/flows.py   # Fase 1: 28 verificações em 320 px, incluindo offline (pasta local, não versionada)
 python3 e2e/fase2.py   # Fase 2: 20 verificações (sessão ao vivo, reload no meio do treino, editor, histórico)
+python3 e2e/fase3.py   # Fase 3: 21 verificações (fotos, comparação, relatórios, CSV/HTML, backup com fotos, offline, sem upload)
 ```
 
 ## Instalar no iPhone
@@ -50,7 +51,7 @@ O PWA só funciona offline e instala corretamente quando servido por **HTTPS**. 
 
 Alternativas: Netlify/Vercel/Cloudflare Pages (arraste a pasta `dist/`). Para testar na rede local: `npm run dev -- --host` (sem service worker, pois não é HTTPS).
 
-## O que está pronto (Fases 1 e 2)
+## O que está pronto (Fases 1, 2 e 3)
 
 | Área | Implementado |
 |---|---|
@@ -67,6 +68,10 @@ Alternativas: Netlify/Vercel/Cloudflare Pages (arraste a pasta `dist/`). Para te
 | Perfil/Plano | Nome, idade, sexo para TMB, altura, datas, objetivo, ritmo, condições de saúde; IMC e TMB (Mifflin-St Jeor) com método; metas nutricionais com **data de vigência** e histórico (confirmação antes de alterar); edição dos marcos; refeições/horários/preferências; tema claro/escuro/automático, verde/azul, fuso horário; pausar acompanhamento |
 | Backup | Exportar JSON (com `schemaVersion`), importar com validação Zod, prévia das contagens, avisos de inconsistência, modos **mesclar** (por ID, sem duplicar) ou **substituir** (exige digitar SUBSTITUIR); apagar tudo com dupla confirmação (digitar APAGAR); status do armazenamento persistente |
 | PWA | Manifesto, ícones, service worker com pré-cache; abre offline após a primeira visita |
+| Fotos (Fase 3) | Fotos opcionais e privadas (frente, perfil, costas, outro), reduzidas no aparelho e guardadas no IndexedDB, sem upload; tipo **obrigatório** “📷 Foto real” × “✨ Simulação” (selos com texto, ícone e estilo diferentes); galeria com filtro; comparação lado a lado por ângulo com peso e cintura registrados perto da data e aviso quando há simulação; trocar rótulo e excluir com confirmação |
+| Relatórios (Fase 3) | Resumo **semanal** (média real, nº de pesagens, diferença para a semana anterior, alimentação só nos dias registrados, treinos, cardio, sono, cintura, notas) e **mensal** (marco do dia 17 × média ±3 dias, cintura vs. medida anterior, fotos reais, constância, avanços de carga); **revisão a cada 14–21 dias** com adesão de 14 dias, tendência e sugestões que nunca alteram metas, e registro das revisões |
+| Exportação (Fase 3) | Relatório **HTML imprimível** autônomo (gráfico real × meta, resumos, medidas, miniaturas das fotos reais opcionais — simulações nunca entram; Imprimir → PDF) e **CSV** pt-BR (pesagens, alimentação, treinos, séries, medidas, resumo semanal), por período |
+| Evolução e lembretes (Fase 3) | Linha de média semanal no gráfico, comparação de medidas entre duas datas, cartão de fotos; lembretes no app (“Para hoje”: pesagem, refeições, treino, medição do dia 17, revisão) configuráveis no Perfil; backup JSON com imagens opcional |
 
 ### Regras de honestidade aplicadas
 
@@ -78,12 +83,11 @@ Alternativas: Netlify/Vercel/Cloudflare Pages (arraste a pasta `dist/`). Para te
 
 ## Itens futuros (não implementados)
 
-- **Fase 3:** fotos privadas (frente/perfil) com rótulos “foto real” × “simulação”, comparação lado a lado, resumos semanais/mensais e relatório CSV/HTML imprimível, lembretes mais completos.
 - **Fase 4:** sincronização (ex.: Supabase com RLS), Apple Health, código de barras com base verificável, widgets.
 
 ## Testes
 
-`npm test` — 45 testes públicos (Vitest + fake-indexeddb) com valores de exemplo, incluindo cronômetro, histórico/progressão por exercício, sessão ao vivo, editor de plano e migração do banco v1 → v2, mais 5 privados em `private/` com os valores reais. Critérios de aceitação da Parte G:
+`npm test` — 59 testes públicos (Vitest + fake-indexeddb) com valores de exemplo, incluindo cronômetro, histórico/progressão por exercício, sessão ao vivo, editor de plano, resumos semanais/mensais, revisão, lembretes, CSV, relatório HTML, fotos e backup com/sem imagens e migração do banco v1 → v3, mais 5 privados em `private/` com os valores reais. Critérios de aceitação da Parte G:
 
 | Parte G | Coberto por |
 |---|---|
@@ -99,7 +103,7 @@ Alternativas: Netlify/Vercel/Cloudflare Pages (arraste a pasta `dist/`). Para te
 | 10. Sem corte horizontal em 320 px | E2E (todas as telas) |
 | 11. Persistência após reload | persistência + E2E |
 | 12. Treino não liberado exige confirmação | E2E |
-| 13. Fotos real × simulação | **Fase 3** (sem fotos nesta versão; nenhum upload existe) |
+| 13. Fotos real × simulação, sem upload | `reports.test.ts` + E2E Fase 3 (selos distintos, aviso na comparação, nenhuma requisição externa) |
 | 14. Data de início no dia certo em qualquer horário | `calculations.test.ts` (23h30 e 00h05 em São Paulo) |
 | 15. Abre offline após primeira visita | E2E (service worker + modo offline) |
 | 16. Feedback ao salvar e recuperação de erro | toasts em toda gravação; erros com “Tentar de novo” |
@@ -121,7 +125,9 @@ e2e/flows.py      fluxos ponta a ponta (Playwright, não versionado)
 
 ## Atualizações e dados existentes
 
-O banco local é versionado (Dexie). A Fase 2 adicionou a versão 2 (índice de séries por exercício e campos opcionais de cronômetro/cardio) — os registros da Fase 1 são preservados automaticamente na atualização. Backups antigos continuam importáveis.
+O banco local é versionado (Dexie). A Fase 2 adicionou a versão 2 (índice de séries por exercício e campos opcionais de cronômetro/cardio) e a Fase 3 a versão 3 (tabelas de fotos). Os registros anteriores são preservados automaticamente na atualização, e backups antigos continuam importáveis.
+
+**Fotos e backup:** por padrão o backup JSON leva só os dados das fotos. Marque “Incluir as imagens das fotos” para levar as imagens (arquivo maior). Ao **substituir** com um backup sem imagens, as fotos do aparelho são mantidas.
 
 ## Modelo de dados
 

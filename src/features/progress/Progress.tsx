@@ -1,6 +1,8 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useMemo, useState } from 'react';
-import { Alert, Button, Card, EmptyState, Page, Segmented, Select, Stat, cx } from '../../components/ui';
+import { Link } from 'react-router-dom';
+import { KindBadge, PhotoImage } from '../photos/Photos';
+import { Button, Card, EmptyState, Page, Segmented, Select, Stat, cx } from '../../components/ui';
 import { WeightChart } from '../../components/charts/WeightChart';
 import { useProfile, useSave, useToday } from '../../app/hooks';
 import { useSheets } from '../../app/sheets';
@@ -23,6 +25,10 @@ export function Progress() {
   const save = useSave();
   const [range, setRange] = useState<Range>('30');
   const [showAll, setShowAll] = useState(false);
+  const [showWeekly, setShowWeekly] = useState(true);
+  const [cmpA, setCmpA] = useState('');
+  const [cmpB, setCmpB] = useState('');
+  const photos = useLiveQuery(() => db.photos.toArray(), []) ?? [];
   const weights = useLiveQuery(() => db.weights.toArray(), [], [] as WeightEntry[]);
   const milestones = useLiveQuery(() => db.milestones.toArray(), []) ?? [];
   const measurements = useLiveQuery(() => db.measurements.orderBy('measuredOn').reverse().toArray(), []) ?? [];
@@ -45,6 +51,10 @@ export function Progress() {
   return (
     <Page title="Evolução" subtitle="Peso, médias semanais, marcos e medidas"
       action={<Button onClick={() => open({ kind: 'weight' })}>+ Peso</Button>}>
+      <div className="grid grid-cols-2 gap-2">
+        <Link to="/fotos" className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-line bg-card text-[15px] font-medium">📷 Fotos</Link>
+        <Link to="/relatorios" className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-line bg-card text-[15px] font-medium">📊 Relatórios</Link>
+      </div>
       <Card>
         <div className="grid grid-cols-3 gap-3">
           <Stat label={current ? 'Peso atual' : 'Referência inicial'} value={fmt(current?.weightKg ?? start)} unit="kg" sub={current ? formatBR(current.date) : 'sem pesagem'} />
@@ -56,7 +66,8 @@ export function Progress() {
 
       <Card title="Gráfico" action={<span className="text-xs text-muted">{weights.length} {weights.length === 1 ? 'pesagem' : 'pesagens'}</span>}>
         <div className="mb-3"><Segmented label="Período do gráfico" value={range} onChange={setRange} options={[{ value: '7', label: '7 d' }, { value: '30', label: '30 d' }, { value: '90', label: '90 d' }, { value: 'all', label: 'Tudo' }]} /></div>
-        <WeightChart weights={weights} milestones={milestones} from={from} to={to} height={240} />
+        <WeightChart weights={weights} milestones={milestones} from={from} to={to} height={240} showWeekly={showWeekly} />
+        <label className="mt-2 flex min-h-10 items-center gap-2 text-sm"><input type="checkbox" className="h-5 w-5 accent-[var(--accent)]" checked={showWeekly} onChange={(e) => setShowWeekly(e.target.checked)} />Mostrar média semanal</label>
         {expected.valueKg !== null && (
           <p className="mt-2 text-sm text-muted">
             {expected.status === 'in_plan' ? <>Meta de referência para hoje: <b className="num text-fg">{fmt(expected.valueKg)} kg</b> (aprox. 0,4–0,5 kg/semana; oscilações são normais).</>
@@ -153,7 +164,43 @@ export function Progress() {
         )}
       </Card>
 
-      <Alert tone="info" title="Fotos de progresso">Fotos privadas, comparações e marcação “foto real” × “simulação” chegam na Fase 3. Nada é enviado para servidores.</Alert>
+      {measurements.length >= 2 && (() => {
+        const a = measurements.find((m) => m.id === cmpA) ?? measurements[measurements.length - 1];
+        const b = measurements.find((m) => m.id === cmpB) ?? measurements[0];
+        const rows: [string, number | undefined, number | undefined][] = [
+          ['Cintura', a.waistCm, b.waistCm], ['Quadril', a.hipCm, b.hipCm], ['Peito', a.chestCm, b.chestCm], ['Braço', a.armCm, b.armCm], ['Coxa', a.thighCm, b.thighCm],
+        ];
+        return (
+          <Card title="Comparar medidas">
+            <div className="grid grid-cols-2 gap-2">
+              <Select aria-label="Medição inicial" value={a.id} onChange={(e) => setCmpA(e.target.value)} className="!min-h-9 py-1 text-sm">{measurements.map((m) => <option key={m.id} value={m.id}>{formatBR(m.measuredOn)}</option>)}</Select>
+              <Select aria-label="Medição final" value={b.id} onChange={(e) => setCmpB(e.target.value)} className="!min-h-9 py-1 text-sm">{measurements.map((m) => <option key={m.id} value={m.id}>{formatBR(m.measuredOn)}</option>)}</Select>
+            </div>
+            <table className="mt-3 w-full text-sm">
+              <caption className="sr-only">Diferença entre medições</caption>
+              <thead><tr className="text-left text-xs text-muted"><th className="py-1 font-medium">cm</th><th className="py-1 text-right font-medium">{formatShortBR(a.measuredOn)}</th><th className="py-1 text-right font-medium">{formatShortBR(b.measuredOn)}</th><th className="py-1 text-right font-medium">Diferença</th></tr></thead>
+              <tbody>{rows.map(([l, x, y]) => (
+                <tr key={l} className="border-t border-line"><td className="py-1.5">{l}</td><td className="num py-1.5 text-right">{fmt(x)}</td><td className="num py-1.5 text-right">{fmt(y)}</td>
+                  <td className="num py-1.5 text-right font-semibold">{x !== undefined && y !== undefined ? `${y - x > 0 ? '+' : y - x < 0 ? '−' : ''}${fmt(Math.abs(y - x))}` : '—'}</td></tr>
+              ))}</tbody>
+            </table>
+            <p className="mt-2 text-xs text-muted">Só valores medidos; nenhuma estimativa de composição corporal.</p>
+          </Card>
+        );
+      })()}
+
+      <Card title="Fotos de progresso" action={<Link to="/fotos" className="text-sm font-semibold text-accent">Abrir ›</Link>}>
+        {photos.length === 0 ? <EmptyState icon="📷">Opcional. Fotos ficam só neste aparelho, com rótulo “foto real” ou “simulação”.</EmptyState> : (
+          <ul className="grid grid-cols-4 gap-2">
+            {[...photos].sort((x, y) => y.capturedOn.localeCompare(x.capturedOn)).slice(0, 4).map((p) => (
+              <li key={p.id} className="relative overflow-hidden rounded-lg border border-line">
+                <PhotoImage photo={p} className="aspect-[3/4] w-full" />
+                <span className="absolute inset-x-0.5 bottom-0.5"><KindBadge kind={p.photoKind} className="!px-1 !text-[8px]" /></span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
     </Page>
   );
 }

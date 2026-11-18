@@ -12,6 +12,8 @@ import { Workouts } from '../features/workouts/Workouts';
 import { Profile } from '../features/profile/Profile';
 import { ChecklistPage } from '../features/habits/Checklist';
 import { LiveSession } from '../features/workouts/LiveSession';
+import { PhotosPage } from '../features/photos/Photos';
+import { ReportsPage } from '../features/reports/Reports';
 import type { Settings } from '../domain/types';
 
 const NAV = [
@@ -82,6 +84,8 @@ function Shell() {
         <Route path="/treinos/sessao" element={<LiveSession />} />
         <Route path="/perfil" element={<Profile />} />
         <Route path="/checklist" element={<ChecklistPage />} />
+        <Route path="/fotos" element={<PhotosPage />} />
+        <Route path="/relatorios" element={<ReportsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
       <BottomNav />

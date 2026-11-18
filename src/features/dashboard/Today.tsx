@@ -1,12 +1,14 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Alert, Button, Card, ProgressBar, cx } from '../../components/ui';
 import { WeightChart } from '../../components/charts/WeightChart';
 import { useProfile, useSettingsOrDefault, useToday } from '../../app/hooks';
 import { useSheets } from '../../app/sheets';
 import { db } from '../../data/db';
 import { dayTotals, expectedWeightOn, fmt, fmtInt, latestWeight, progressToGoal, reviewTrend, targetsForDate } from '../../domain/calculations';
-import { addDays, diffDays, formatBR, formatLongBR, weekStartMonday, weekday, weekdayName } from '../../domain/dates';
+import { addDays, diffDays, formatBR, formatLongBR, monthKey, timeInTimeZone, weekStartMonday, weekday, weekdayName } from '../../domain/dates';
+import { DEFAULT_REMINDERS, dueReminders, reviewStatus } from '../../domain/reports';
+import { KindBadge, PhotoImage } from '../photos/Photos';
 import { HabitList } from '../habits/Checklist';
 import { KcalHeadline, MacroBars } from '../nutrition/Nutrition';
 import { STATUS_LABEL } from '../workouts/WorkoutLogSheet';
@@ -35,6 +37,9 @@ export function Today() {
   const sessionsToday = useLiveQuery(() => db.workouts.where('date').equals(today).toArray(), [today]) ?? [];
   const recoveryToday = useLiveQuery(() => db.recovery.where('date').equals(today).first(), [today]);
   const activeSession = useLiveQuery(() => db.workouts.filter((w) => !!w.inProgress).first(), []);
+  const waistThisMonth = useLiveQuery(() => db.measurements.where('measuredOn').startsWith(monthKey(today)).filter((m) => m.waistCm !== undefined).count(), [today]);
+  const latestPhotos = useLiveQuery(() => db.photos.where('photoKind').equals('real').toArray().then((p) => p.sort((a, b) => b.capturedOn.localeCompare(a.capturedOn)).slice(0, 3)), []);
+  const navigate = useNavigate();
   const weekWeights = weights.filter((w) => w.date >= weekStartMonday(today) && w.date <= today).length;
 
   if (!profile) return null;
@@ -47,7 +52,6 @@ export function Today() {
   const trend = reviewTrend(weights, today);
   const daysToTarget = diffDays(profile.targetDate, today);
   const hour = new Date().getHours();
-  const isDay17 = today.endsWith('-17');
 
   // Próximo treino (hoje ou próximos 6 dias, ignorando descanso)
   let next: { date: string; plan: (typeof plans)[number] } | null = null;
@@ -58,6 +62,22 @@ export function Today() {
   }
   const cleared = profile.medicalClearanceConfirmed;
 
+  const planToday = plans.find((x) => x.weekday === weekday(today) && x.type !== 'rest');
+  const reminders = dueReminders({
+    today, nowHHMM: timeInTimeZone(new Date(), settings.timeZone), settings: settings.reminders ?? DEFAULT_REMINDERS,
+    weightsThisWeek: weekWeights, weighedToday: weights.some((w) => w.date === today),
+    meals: settings.meals, loggedMeals: [...new Set(logs.map((l) => l.mealLabel))],
+    plannedWorkoutToday: planToday ? { name: planToday.name, requiresClearance: planToday.requiresClearance } : null,
+    workoutLoggedToday: sessionsToday.length > 0, cleared: profile.medicalClearanceConfirmed,
+    waistThisMonth: (waistThisMonth ?? 0) > 0, review: reviewStatus(settings.reviewLog, profile.startDate, today), paused: settings.trackingPaused,
+  });
+  const runReminder = (a?: string) => {
+    if (a === 'weight') open({ kind: 'weight' });
+    else if (a === 'food') open({ kind: 'food' });
+    else if (a === 'measure') open({ kind: 'measure' });
+    else if (a === 'workout') navigate('/treinos');
+    else if (a === 'review') navigate('/relatorios');
+  };
   const pending: string[] = [];
   if (!current || current.date !== today) { if (weekWeights < 3) pending.push(`pesagem (${weekWeights}/3 na semana)`); }
   if (!totals.hasEntries) pending.push('alimentação');
@@ -115,9 +135,20 @@ export function Today() {
           </Card>
         )}
 
-        {pending.length > 0 && !settings.trackingPaused && (
-          <Card title="Ainda falta registrar hoje">
-            <p className="text-[15px]">{pending.join(' · ')}</p>
+        {(reminders.length > 0 || pending.length > 0) && !settings.trackingPaused && (
+          <Card title="Para hoje">
+            {reminders.length > 0 && (
+              <ul className="mb-2 space-y-1">
+                {reminders.map((r) => (
+                  <li key={r.id}>
+                    <button type="button" onClick={() => runReminder(r.action)} className="flex w-full items-center justify-between gap-2 rounded-xl px-2 py-2 text-left text-[15px] hover:bg-card2">
+                      <span><span aria-hidden>🔔 </span>{r.text}</span><span aria-hidden className="text-muted">›</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {pending.length > 0 && <p className="px-2 text-sm text-muted">Ainda sem registro hoje: {pending.join(' · ')}</p>}
           </Card>
         )}
 
@@ -130,15 +161,10 @@ export function Today() {
           ))}
         </section>
 
-        {isDay17 && (
-          <Alert tone="info" title="Dia 17: revisão mensal">
-            Confira o marco do mês em Evolução, registre a cintura e, se quiser, fotos. <button type="button" className="font-semibold text-accent underline" onClick={() => open({ kind: 'measure' })}>Medir agora</button>
-          </Alert>
-        )}
 
         {trend.kind === 'stalled' && (
           <Alert tone="info" title="Revisão sugerida (nada foi alterado)">
-            A média semanal não caiu nas últimas ~{trend.weeks} semanas. Se a adesão foi boa, vale revisar porções, atividade e orientação nutricional — por exemplo, discutir um ajuste de 150–200 kcal/dia. Metas só mudam se você editar em Perfil.
+            A média semanal não caiu nas últimas ~{trend.weeks} semanas. Se a adesão foi boa, vale revisar porções, atividade e orientação nutricional — por exemplo, discutir um ajuste de 150–200 kcal/dia. Metas só mudam se você editar em Perfil. <Link to="/relatorios" className="font-semibold text-accent underline">Ver revisão</Link>
           </Alert>
         )}
         {trend.kind === 'fast' && (
@@ -169,6 +195,16 @@ export function Today() {
               </div>
             ) : <p className="text-sm text-muted">Nenhum treino planejado nos próximos dias.</p>}
             {!cleared && <p className="mt-2 text-xs text-muted">⚠ {profile.healthNotes ? `${profile.healthNotes}: p` : 'P'}rocure avaliação antes de treinar. Sem impacto ou cargas altas até lá.</p>}
+          </Card>
+        )}
+
+        {settings.showPhotos && (
+          <Card title="Fotos de progresso" action={<Link to="/fotos" className="text-sm font-semibold text-accent">Fotos ›</Link>}>
+            {latestPhotos && latestPhotos.length > 0 ? (
+              <ul className="grid grid-cols-3 gap-2">{latestPhotos.map((p) => (
+                <li key={p.id} className="relative overflow-hidden rounded-lg border border-line"><PhotoImage photo={p} className="aspect-[3/4] w-full" /><span className="absolute bottom-0.5 left-0.5"><KindBadge kind="real" className="!px-1 !text-[8px]" /></span><span className="sr-only">{formatBR(p.capturedOn)}</span></li>
+              ))}</ul>
+            ) : <p className="text-sm text-muted">Nenhuma foto real ainda. Opcional — no dia 17, mesmas condições.</p>}
           </Card>
         )}
 

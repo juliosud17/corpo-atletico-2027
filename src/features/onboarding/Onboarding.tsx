@@ -117,7 +117,7 @@ export function Onboarding() {
             <Toggle label="Peso e progresso" checked={show.showWeight} onChange={(v) => setShow((s) => ({ ...s, showWeight: v }))} />
             <Toggle label="Calorias e macros" checked={show.showCalories} onChange={(v) => setShow((s) => ({ ...s, showCalories: v }))} />
             <Toggle label="Treinos" checked={show.showWorkouts} onChange={(v) => setShow((s) => ({ ...s, showWorkouts: v }))} />
-            <Toggle label="Fotos de progresso" description="Disponível na Fase 3" checked={show.showPhotos} onChange={(v) => setShow((s) => ({ ...s, showPhotos: v }))} />
+            <Toggle label="Fotos de progresso" description="Privadas, só no aparelho" checked={show.showPhotos} onChange={(v) => setShow((s) => ({ ...s, showPhotos: v }))} />
           </div>
           <div className="flex gap-2 pt-4"><Button variant="secondary" onClick={() => setStep(1)}>Voltar</Button><Button className="flex-1" onClick={() => setStep(3)}>Continuar</Button></div>
         </Card>

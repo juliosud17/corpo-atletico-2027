@@ -83,6 +83,40 @@ export interface BodyMeasurement {
   updatedAt: ISODateTime;
 }
 
+export interface ProgressPhoto {
+  id: ID;
+  capturedOn: ISODate;
+  angle: 'front' | 'side' | 'back' | 'other';
+  /** 'real' = foto do usuário; 'simulation' = imagem de objetivo/simulação (referência artística). */
+  photoKind: 'real' | 'simulation';
+  blobKey: ID;
+  width?: number;
+  height?: number;
+  note?: string;
+  createdAt: ISODateTime;
+}
+
+/** Conteúdo binário da foto (somente no aparelho). */
+export interface PhotoBlob {
+  id: ID;
+  type: string;
+  data: ArrayBuffer;
+  thumb?: ArrayBuffer;
+}
+
+export interface ReviewLogEntry {
+  date: ISODate;
+  note?: string;
+}
+
+export interface ReminderSettings {
+  weighIn: boolean;
+  meals: boolean;
+  workouts: boolean;
+  monthly: boolean;
+  review: boolean;
+}
+
 export interface FoodItem {
   id: ID;
   name: string;
@@ -282,6 +316,9 @@ export interface Settings {
   meals: MealSlot[];
   foodPreferences: string;
   lastBackupAt?: ISODateTime;
+  /** Revisões de 14–21 dias registradas pelo usuário. */
+  reviewLog?: ReviewLogEntry[];
+  reminders?: ReminderSettings;
   updatedAt: ISODateTime;
 }
 
@@ -306,4 +343,7 @@ export interface BackupFile {
   habits: HabitDefinition[];
   completions: HabitCompletion[];
   settings: Settings | null;
+  /** Opcional: metadados das fotos (sempre exportados) e conteúdo em base64 (só se o usuário pedir). */
+  photos?: ProgressPhoto[];
+  photoBlobs?: { id: ID; type: string; base64: string; thumbBase64?: string }[];
 }

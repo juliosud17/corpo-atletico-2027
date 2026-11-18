@@ -145,8 +145,18 @@ const settings = z.object({
   timeZone: z.string().max(60), showWeight: z.boolean(), showCalories: z.boolean(), showWorkouts: z.boolean(), showPhotos: z.boolean(),
   trackingPaused: z.boolean(), safetyAcknowledgedAt: isoDateTime.optional(),
   meals: z.array(z.object({ label: text(80), time: z.string().max(5), reference: text(300).optional() })).max(20),
-  foodPreferences: text(1000), lastBackupAt: isoDateTime.optional(), updatedAt: isoDateTime,
+  foodPreferences: text(1000), lastBackupAt: isoDateTime.optional(),
+  reviewLog: z.array(z.object({ date: isoDate, note: text(1000).optional() })).max(500).optional(),
+  reminders: z.object({ weighIn: z.boolean(), meals: z.boolean(), workouts: z.boolean(), monthly: z.boolean(), review: z.boolean() }).optional(),
+  updatedAt: isoDateTime,
 });
+
+const photo = z.object({
+  ...base, capturedOn: isoDate, angle: z.enum(['front', 'side', 'back', 'other']), photoKind: z.enum(['real', 'simulation']),
+  blobKey: id, width: optNum(1, 20000), height: optNum(1, 20000), note: text(300).optional(), createdAt: isoDateTime,
+});
+const b64 = z.string().max(30_000_000).regex(/^[A-Za-z0-9+/=]*$/, 'Imagem inválida');
+const photoBlob = z.object({ ...base, type: z.string().regex(/^image\/(jpeg|png|webp)$/, 'Formato de imagem não suportado'), base64: b64, thumbBase64: b64.optional() });
 
 const MAX = 50_000;
 const arr = <T extends z.ZodTypeAny>(s: T) => z.array(s).max(MAX).default([]);
@@ -172,6 +182,8 @@ export const backupSchema = z.object({
   habits: arr(habit),
   completions: arr(completion),
   settings: settings.nullable(),
+  photos: z.array(photo).max(5000).default([]),
+  photoBlobs: z.array(photoBlob).max(5000).default([]),
 });
 
 export type BackupValidation =
@@ -200,6 +212,9 @@ export function validateBackup(input: unknown): BackupValidation {
   const sessionIds = new Set(data.workouts.map((w) => w.id));
   const orphanSets = data.exerciseSets.filter((s) => !sessionIds.has(s.sessionId)).length;
   if (orphanSets) warnings.push(`${orphanSets} série(s) sem sessão correspondente.`);
+  const blobIds = new Set((data.photoBlobs ?? []).map((b) => b.id));
+  const photosWithoutImage = (data.photos ?? []).filter((p) => !blobIds.has(p.blobKey)).length;
+  if (photosWithoutImage && blobIds.size) warnings.push(`${photosWithoutImage} foto(s) sem imagem no arquivo.`);
   const habitIds = new Set(data.habits.map((h) => h.id));
   const orphanComp = data.completions.filter((c) => !habitIds.has(c.habitId)).length;
   if (orphanComp) warnings.push(`${orphanComp} marcação(ões) de hábito sem hábito correspondente.`);
@@ -219,5 +234,7 @@ export function backupCounts(b: BackupFile): { label: string; count: number }[] 
     { label: 'Marcações de hábitos', count: b.completions.length },
     { label: 'Marcos de meta', count: b.milestones.length },
     { label: 'Versões de metas nutricionais', count: b.targets.length },
+    { label: 'Fotos (dados)', count: b.photos?.length ?? 0 },
+    { label: 'Fotos (imagens incluídas)', count: b.photoBlobs?.length ?? 0 },
   ];
 }

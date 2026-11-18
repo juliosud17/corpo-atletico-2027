@@ -8,9 +8,10 @@ import {
 import { monthKey, todayISO, weekStartMonday } from '../domain/dates';
 import type {
   BackupFile, BodyMeasurement, Cadence, ExercisePrescription, ExerciseSet, FoodItem, FoodLog, GoalMilestone, HabitDefinition, ISODate,
-  NutritionTargets, RecoveryEntry, Settings, UserProfile, WaterEntry, WeightEntry, WorkoutPlan, WorkoutSession,
+  NutritionTargets, PhotoBlob, ProgressPhoto, RecoveryEntry, Settings, UserProfile, WaterEntry, WeightEntry, WorkoutPlan, WorkoutSession,
 } from '../domain/types';
 import { elapsedMs } from '../domain/workouts';
+import { base64ToBuffer, bufferToBase64 } from '../domain/binary';
 import { SCHEMA_VERSION } from '../domain/types';
 
 // Configuração inicial ------------------------------------------------------------
@@ -272,7 +273,7 @@ export async function saveRecovery(r: Omit<RecoveryEntry, 'id' | 'createdAt' | '
 }
 
 // Backup -------------------------------------------------------------------------------
-export async function exportBackup(database: CorpoDB = db): Promise<BackupFile> {
+export async function exportBackup(database: CorpoDB = db, opts: { includePhotos?: boolean } = {}): Promise<BackupFile> {
   return database.transaction('r', ALL_TABLES.map((t) => database.table(t)), async () => ({
     app: 'corpo-atletico-2027' as const,
     schemaVersion: SCHEMA_VERSION,
@@ -294,6 +295,10 @@ export async function exportBackup(database: CorpoDB = db): Promise<BackupFile> 
     habits: await database.habits.toArray(),
     completions: await database.completions.toArray(),
     settings: (await database.settings.get('app')) ?? null,
+    photos: await database.photos.toArray(),
+    photoBlobs: opts.includePhotos
+      ? (await database.photoBlobs.toArray()).map((b) => ({ id: b.id, type: b.type, base64: bufferToBase64(b.data), thumbBase64: b.thumb ? bufferToBase64(b.thumb) : undefined }))
+      : [],
   }));
 }
 
@@ -304,8 +309,10 @@ export type ImportMode = 'merge' | 'replace';
  * replace: apaga tudo e restaura exatamente o arquivo.
  */
 export async function importBackup(data: BackupFile, mode: ImportMode, database: CorpoDB = db): Promise<void> {
+  const hasImages = (data.photoBlobs?.length ?? 0) > 0;
   await database.transaction('rw', ALL_TABLES.map((t) => database.table(t)), async () => {
-    if (mode === 'replace') for (const t of ALL_TABLES) await database.table(t).clear();
+    // Substituir: apaga tudo. Exceção: se o arquivo não traz imagens, as fotos deste aparelho são mantidas.
+    if (mode === 'replace') for (const t of ALL_TABLES) if (hasImages || (t !== 'photos' && t !== 'photoBlobs')) await database.table(t).clear();
     if (data.profile) await database.profile.put(data.profile);
     if (data.settings) await database.settings.put({ ...data.settings, onboardingDone: true });
     await database.milestones.bulkPut(data.milestones);
@@ -323,7 +330,43 @@ export async function importBackup(data: BackupFile, mode: ImportMode, database:
     await database.recovery.bulkPut(data.recovery);
     await database.habits.bulkPut(data.habits);
     await database.completions.bulkPut(data.completions);
+    if (data.photos?.length) {
+      const known = new Set([...(await database.photoBlobs.toCollection().primaryKeys()), ...(data.photoBlobs ?? []).map((b) => b.id)]);
+      await database.photos.bulkPut(data.photos.filter((p) => known.has(p.blobKey)));
+    }
+    if (hasImages) {
+      await database.photoBlobs.bulkPut(data.photoBlobs!.map((b) => ({ id: b.id, type: b.type, data: base64ToBuffer(b.base64), thumb: b.thumbBase64 ? base64ToBuffer(b.thumbBase64) : undefined })));
+    }
   });
+}
+
+// Fotos (Fase 3) -----------------------------------------------------------------------------
+export async function savePhoto(meta: Omit<ProgressPhoto, 'id' | 'blobKey' | 'createdAt'>, blob: Omit<PhotoBlob, 'id'>, database: CorpoDB = db): Promise<string> {
+  const id = uid();
+  await database.transaction('rw', database.photos, database.photoBlobs, async () => {
+    await database.photoBlobs.put({ ...blob, id });
+    await database.photos.put({ ...meta, id, blobKey: id, createdAt: nowISO() });
+  });
+  return id;
+}
+
+export async function updatePhoto(id: string, patch: Partial<Pick<ProgressPhoto, 'capturedOn' | 'angle' | 'photoKind' | 'note'>>, database: CorpoDB = db): Promise<void> {
+  await database.photos.update(id, patch);
+}
+
+export async function deletePhoto(id: string, database: CorpoDB = db): Promise<void> {
+  await database.transaction('rw', database.photos, database.photoBlobs, async () => {
+    const p = await database.photos.get(id);
+    if (p) await database.photoBlobs.delete(p.blobKey);
+    await database.photos.delete(id);
+  });
+}
+
+// Revisões e lembretes (Fase 3) ------------------------------------------------------------------
+export async function logReview(date: ISODate, note: string | undefined, database: CorpoDB = db): Promise<void> {
+  const s = await getSettings(database);
+  const log = [...(s.reviewLog ?? []).filter((r) => r.date !== date), { date, note: note?.trim() || undefined }].sort((a, b) => a.date.localeCompare(b.date));
+  await updateSettings({ reviewLog: log.slice(-200) }, database);
 }
 
 export async function clearAllData(database: CorpoDB = db): Promise<void> {

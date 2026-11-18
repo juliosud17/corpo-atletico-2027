@@ -1,6 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie';
 import type {
-  BodyMeasurement, ExercisePrescription, ExerciseSet, FavoriteMeal, FoodItem, FoodLog, GoalMilestone,
+  BodyMeasurement, ExercisePrescription, PhotoBlob, ProgressPhoto, ExerciseSet, FavoriteMeal, FoodItem, FoodLog, GoalMilestone,
   HabitCompletion, HabitDefinition, NutritionTargets, RecoveryEntry, Settings, UserProfile, WaterEntry,
   WeightEntry, WorkoutPlan, WorkoutSession,
 } from '../domain/types';
@@ -44,6 +44,8 @@ export class CorpoDB extends Dexie {
   habits!: EntityTable<HabitDefinition, 'id'>;
   completions!: EntityTable<HabitCompletion, 'id'>;
   settings!: EntityTable<Settings, 'id'>;
+  photos!: EntityTable<ProgressPhoto, 'id'>;
+  photoBlobs!: EntityTable<PhotoBlob, 'id'>;
 
   constructor(name = 'corpo-atletico-2027') {
     super(name);
@@ -51,6 +53,11 @@ export class CorpoDB extends Dexie {
     // Fase 2: índice por exercício (histórico/evolução de carga). Dados existentes são preservados.
     this.version(2).stores({
       exerciseSets: 'id, sessionId, exerciseName',
+    });
+    // Fase 3: fotos privadas (metadados + binário separado, para listar sem carregar as imagens).
+    this.version(3).stores({
+      photos: 'id, capturedOn, angle, photoKind',
+      photoBlobs: 'id',
     });
   }
 }
@@ -60,6 +67,7 @@ export const db = new CorpoDB();
 export const ALL_TABLES = [
   'profile', 'milestones', 'targets', 'weights', 'measurements', 'foodItems', 'foodLogs', 'favoriteMeals',
   'waterEntries', 'workoutPlans', 'exercises', 'workouts', 'exerciseSets', 'recovery', 'habits', 'completions', 'settings',
+  'photos', 'photoBlobs',
 ] as const;
 
 export function uid(): string {

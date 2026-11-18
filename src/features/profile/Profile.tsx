@@ -8,7 +8,8 @@ import { deleteMilestone, saveMilestone, saveTargets, updateProfile, updateSetti
 import { bmi, bmrMifflinStJeor, fmt, fmtInt, kcalFromMacros, parseDecimal, sortMilestones, targetsForDate, weeksBetween } from '../../domain/calculations';
 import { formatBR } from '../../domain/dates';
 import { profileFormSchema, targetsFormSchema } from '../../domain/validations';
-import type { MealSlot, Sex } from '../../domain/types';
+import type { MealSlot, ReminderSettings, Sex } from '../../domain/types';
+import { DEFAULT_REMINDERS } from '../../domain/reports';
 import { BackupCard } from '../backup/Backup';
 import { SafetyNotice } from '../workouts/Workouts';
 
@@ -202,6 +203,26 @@ function MealsEditor() {
   );
 }
 
+function RemindersCard() {
+  const settings = useSettingsOrDefault();
+  const save = useSave();
+  const r = settings.reminders ?? DEFAULT_REMINDERS;
+  const set = (k: keyof ReminderSettings, v: boolean) => save(() => updateSettings({ reminders: { ...r, [k]: v } }), 'Lembrete atualizado');
+  return (
+    <Card title="Lembretes no app">
+      <p className="mb-2 text-sm text-muted">Aparecem no cartão “Para hoje” quando você abre o app.</p>
+      <div className="divide-y divide-line">
+        <Toggle label="Pesagem" description="Seg, qua e sex de manhã, até 3 por semana" checked={r.weighIn} onChange={(v) => set('weighIn', v)} />
+        <Toggle label="Refeições" description="Até 2 h após o horário, se não houver registro" checked={r.meals} onChange={(v) => set('meals', v)} />
+        <Toggle label="Treino do dia" checked={r.workouts} onChange={(v) => set('workouts', v)} />
+        <Toggle label="Medição mensal (dia 17)" checked={r.monthly} onChange={(v) => set('monthly', v)} />
+        <Toggle label="Revisão a cada 14–21 dias" checked={r.review} onChange={(v) => set('review', v)} />
+      </div>
+      <p className="mt-2 text-xs text-muted">Notificações com o app fechado exigiriam um servidor de push, que esta versão não tem — por isso nada é prometido fora do app.</p>
+    </Card>
+  );
+}
+
 function PreferencesCard() {
   const settings = useSettingsOrDefault();
   const save = useSave();
@@ -213,7 +234,7 @@ function PreferencesCard() {
         <Toggle label="Mostrar peso no painel" checked={settings.showWeight} onChange={(v) => set({ showWeight: v })} />
         <Toggle label="Mostrar calorias no painel" checked={settings.showCalories} onChange={(v) => set({ showCalories: v })} />
         <Toggle label="Mostrar treinos no painel" checked={settings.showWorkouts} onChange={(v) => set({ showWorkouts: v })} />
-        <Toggle label="Fotos de progresso" description="Fase 3 — preferência guardada" checked={settings.showPhotos} onChange={(v) => set({ showPhotos: v })} />
+        <Toggle label="Fotos de progresso" description="Cartão com as últimas fotos reais" checked={settings.showPhotos} onChange={(v) => set({ showPhotos: v })} />
       </div>
       <div className="mt-3 grid grid-cols-2 gap-3">
         <Field label="Tema">{(id) => <Select id={id} value={settings.theme} onChange={(e) => set({ theme: e.target.value as 'dark' })}><option value="dark">Grafite escuro</option><option value="light">Claro</option><option value="system">Automático</option></Select>}</Field>
@@ -244,9 +265,7 @@ export function Profile() {
       <MilestonesEditor />
       <MealsEditor />
       <PreferencesCard />
-      <Card title="Lembretes">
-        <p className="text-sm">Nesta versão, os lembretes aparecem <b>dentro do app</b> (cartão “Ainda falta registrar hoje” e aviso do dia 17). Notificações push no iPhone exigiriam um servidor e não foram ativadas — nada é prometido que não funcione.</p>
-      </Card>
+      <RemindersCard />
       <BackupCard />
       <Card title="Segurança">
         <SafetyNotice compact />
