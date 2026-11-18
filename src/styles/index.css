@@ -1,0 +1,56 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-card: var(--card);
+  --color-card2: var(--card2);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-plan: var(--plan);
+  --font-sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+:root, .dark {
+  --bg: #0f1418; --card: #182027; --card2: #212b33; --fg: #eef2f5; --muted: #9aa7b2; --line: #2c3842;
+  --accent: #22c55e; --accent-fg: #06210f; --accent-soft: rgba(34,197,94,.14);
+  --warn: #f5b942; --warn-soft: rgba(245,185,66,.14); --danger: #f87171; --danger-soft: rgba(248,113,113,.15);
+  --plan: #9ca3af;
+  color-scheme: dark;
+}
+.dark.accent-blue, :root.accent-blue { --accent: #38bdf8; --accent-fg: #04202e; --accent-soft: rgba(56,189,248,.15); }
+
+.light {
+  --bg: #f3f5f7; --card: #ffffff; --card2: #eef1f4; --fg: #111827; --muted: #5b6672; --line: #dde3e8;
+  --accent: #15803d; --accent-fg: #ffffff; --accent-soft: rgba(21,128,61,.1);
+  --warn: #a15c00; --warn-soft: rgba(217,119,6,.12); --danger: #b91c1c; --danger-soft: rgba(220,38,38,.1);
+  --plan: #6b7280;
+  color-scheme: light;
+}
+.light.accent-blue { --accent: #0369a1; --accent-fg: #ffffff; --accent-soft: rgba(3,105,161,.1); }
+
+html, body, #root { min-height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg); font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent;
+  overflow-x: hidden;
+}
+.num { font-variant-numeric: tabular-nums; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
+input, select, textarea, button { font: inherit; color: inherit; }
+/* iOS não dá zoom em inputs com fonte ≥ 16px */
+input, select, textarea { font-size: 16px; }
+.pb-safe { padding-bottom: calc(env(safe-area-inset-bottom) + 0.5rem); }
+.pt-safe { padding-top: env(safe-area-inset-top); }
+@keyframes slideup { from { transform: translateY(24px); opacity: 0 } to { transform: none; opacity: 1 } }
+.anim-up { animation: slideup .18s ease-out; }
+@media (prefers-reduced-motion: reduce) { .anim-up { animation: none; } }
