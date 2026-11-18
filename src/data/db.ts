@@ -1,6 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie';
 import type {
-  BodyMeasurement, ExercisePrescription, PhotoBlob, ProgressPhoto, Recipe, ExerciseSet, FavoriteMeal, FoodItem, FoodLog, GoalMilestone,
+  BodyMeasurement, ExercisePrescription, PhotoBlob, ProgressPhoto, Recipe, RecipeCategory, ExerciseSet, FavoriteMeal, FoodItem, FoodLog, GoalMilestone,
   HabitCompletion, HabitDefinition, NutritionTargets, RecoveryEntry, Settings, UserProfile, WaterEntry,
   WeightEntry, WorkoutPlan, WorkoutSession,
 } from '../domain/types';
@@ -47,6 +47,7 @@ export class CorpoDB extends Dexie {
   photos!: EntityTable<ProgressPhoto, 'id'>;
   photoBlobs!: EntityTable<PhotoBlob, 'id'>;
   recipes!: EntityTable<Recipe, 'id'>;
+  recipeCategories!: EntityTable<RecipeCategory, 'id'>;
 
   constructor(name = 'corpo-atletico-2027') {
     super(name);
@@ -62,6 +63,8 @@ export class CorpoDB extends Dexie {
     });
     // Receitas (importadas ou próprias), com ingredientes ligados à base de alimentos.
     this.version(4).stores({ recipes: 'id, name, updatedAt' });
+    // Categorias de receitas (com foto).
+    this.version(5).stores({ recipeCategories: 'id, order' });
   }
 }
 
@@ -70,7 +73,7 @@ export const db = new CorpoDB();
 export const ALL_TABLES = [
   'profile', 'milestones', 'targets', 'weights', 'measurements', 'foodItems', 'foodLogs', 'favoriteMeals',
   'waterEntries', 'workoutPlans', 'exercises', 'workouts', 'exerciseSets', 'recovery', 'habits', 'completions', 'settings',
-  'photos', 'photoBlobs', 'recipes',
+  'photos', 'photoBlobs', 'recipes', 'recipeCategories',
 ] as const;
 
 export function uid(): string {

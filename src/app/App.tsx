@@ -2,7 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useEffect, useState } from 'react';
 import { HashRouter, NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { db } from '../data/db';
-import { syncReferenceFoods, updateSettings } from '../data/repo';
+import { syncRecipeCategories, syncReferenceFoods, updateSettings } from '../data/repo';
 import { ToastProvider, cx } from '../components/ui';
 import { SheetsProvider } from './sheets';
 import { Onboarding } from '../features/onboarding/Onboarding';
@@ -74,7 +74,7 @@ function Shell() {
   useTheme(settings);
   // Atualiza a base de alimentos (TACO/IBGE) a cada versão do app, sem tocar nos registros.
   const onboarded = !!settings?.onboardingDone;
-  useEffect(() => { if (onboarded) void syncReferenceFoods().catch(() => {}); }, [onboarded]);
+  useEffect(() => { if (onboarded) { void syncReferenceFoods().catch(() => {}); void syncRecipeCategories().catch(() => {}); } }, [onboarded]);
   // Visual novo (laranja): aplicado uma vez; depois a cor escolhida em Perfil é respeitada.
   const designVersion = settings?.designVersion;
   useEffect(() => { if (onboarded && (designVersion ?? 0) < 2) void updateSettings({ accent: 'orange', designVersion: 2 }).catch(() => {}); }, [onboarded, designVersion]);

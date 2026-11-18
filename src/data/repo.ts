@@ -3,18 +3,19 @@
 import { ALL_TABLES, db, nowISO, uid, type CorpoDB } from './db';
 import {
   buildInitialMilestones, buildInitialProfile, buildInitialTargets, buildWorkoutPlans, defaultSettings,
-  INITIAL_HABITS,
+  DEFAULT_RECIPE_CATEGORIES, INITIAL_HABITS,
 } from './seed';
 import { REFERENCE_FOODS, referenceToFoodItem } from './foodDatabase';
 import { hasAnyNutrition } from '../domain/calculations';
 import { monthKey, todayISO, weekStartMonday } from '../domain/dates';
 import type {
   BackupFile, BodyMeasurement, Cadence, ExercisePrescription, ExerciseSet, FoodItem, FoodLog, GoalMilestone, HabitDefinition, ISODate,
-  NutritionTargets, PhotoBlob, ProgressPhoto, Recipe, RecoveryEntry, Settings, UserProfile, WaterEntry, WeightEntry, WorkoutPlan, WorkoutSession,
+  NutritionTargets, PhotoBlob, ProgressPhoto, Recipe, RecipeCategory, RecoveryEntry, Settings, UserProfile, WaterEntry, WeightEntry, WorkoutPlan, WorkoutSession,
 } from '../domain/types';
 import { elapsedMs } from '../domain/workouts';
 import { base64ToBuffer, bufferToBase64 } from '../domain/binary';
 import { SCHEMA_VERSION } from '../domain/types';
+import type { RecipePack } from '../domain/validations';
 
 // Configuração inicial ------------------------------------------------------------
 export interface OnboardingChoice {
@@ -356,6 +357,7 @@ export async function exportBackup(database: CorpoDB = db, opts: { includePhotos
     completions: await database.completions.toArray(),
     settings: (await database.settings.get('app')) ?? null,
     recipes: await database.recipes.toArray(),
+    recipeCategories: await database.recipeCategories.toArray(),
     photos: await database.photos.toArray(),
     photoBlobs: opts.includePhotos
       ? (await database.photoBlobs.toArray()).map((b) => ({ id: b.id, type: b.type, base64: bufferToBase64(b.data), thumbBase64: b.thumb ? bufferToBase64(b.thumb) : undefined }))
@@ -392,6 +394,7 @@ export async function importBackup(data: BackupFile, mode: ImportMode, database:
     await database.habits.bulkPut(data.habits);
     await database.completions.bulkPut(data.completions);
     if (data.recipes?.length) await database.recipes.bulkPut(data.recipes);
+    if (data.recipeCategories?.length) await database.recipeCategories.bulkPut(data.recipeCategories);
     if (data.photos?.length) {
       const known = new Set([...(await database.photoBlobs.toCollection().primaryKeys()), ...(data.photoBlobs ?? []).map((b) => b.id)]);
       await database.photos.bulkPut(data.photos.filter((p) => known.has(p.blobKey)));
@@ -434,6 +437,64 @@ export async function saveRecipe(r: Omit<Recipe, 'id' | 'createdAt' | 'updatedAt
   return entry.id;
 }
 export const deleteRecipe = (id: string, database: CorpoDB = db) => database.recipes.delete(id);
+
+export async function setRecipeFavorite(id: string, favorite: boolean, database: CorpoDB = db): Promise<void> {
+  await database.recipes.update(id, { favorite, updatedAt: nowISO() });
+}
+
+/** Cria as categorias padrão uma única vez (se o usuário apagar alguma, ela não volta). Idempotente. */
+export async function syncRecipeCategories(database: CorpoDB = db): Promise<number> {
+  const s = await database.settings.get('app');
+  if (s?.recipeCategoriesSeeded) return 0;
+  const now = nowISO();
+  let added = 0;
+  await database.transaction('rw', database.recipeCategories, database.settings, async () => {
+    for (const [i, c] of DEFAULT_RECIPE_CATEGORIES.entries()) {
+      if (await database.recipeCategories.get(c.id)) continue;
+      await database.recipeCategories.put({ ...c, order: i, createdAt: now, updatedAt: now });
+      added++;
+    }
+    if (s) await database.settings.update('app', { recipeCategoriesSeeded: true });
+  });
+  return added;
+}
+
+export async function saveRecipeCategory(c: { id?: string; name: string; image?: string; order?: number }, database: CorpoDB = db): Promise<string> {
+  const now = nowISO();
+  const existing = c.id ? await database.recipeCategories.get(c.id) : undefined;
+  const order = c.order ?? existing?.order ?? ((await database.recipeCategories.toArray()).reduce((m, x) => Math.max(m, x.order), -1) + 1);
+  const entry: RecipeCategory = { ...existing, ...c, id: existing?.id ?? uid(), order, createdAt: existing?.createdAt ?? now, updatedAt: now };
+  await database.recipeCategories.put(entry);
+  return entry.id;
+}
+
+export async function deleteRecipeCategory(id: string, database: CorpoDB = db): Promise<void> {
+  await database.transaction('rw', database.recipeCategories, database.recipes, async () => {
+    await database.recipeCategories.delete(id);
+    const now = nowISO();
+    for (const r of await database.recipes.toArray()) {
+      if (r.categoryIds?.includes(id)) await database.recipes.put({ ...r, categoryIds: r.categoryIds.filter((x) => x !== id), updatedAt: now });
+    }
+  });
+}
+
+/**
+ * Importa um pacote de receitas prontas (gravação por ID: importar de novo atualiza, não duplica).
+ * Preserva o que é do usuário: favorito da receita e foto de categoria já escolhida quando o pacote não traz foto.
+ */
+export async function importRecipePack(pack: RecipePack, database: CorpoDB = db): Promise<{ recipes: number; categories: number }> {
+  await database.transaction('rw', database.recipes, database.recipeCategories, async () => {
+    for (const c of pack.categories) {
+      const ex = await database.recipeCategories.get(c.id);
+      await database.recipeCategories.put({ ...c, image: c.image ?? ex?.image, order: ex?.order ?? c.order });
+    }
+    for (const r of pack.recipes) {
+      const ex = await database.recipes.get(r.id);
+      await database.recipes.put({ ...r, favorite: ex?.favorite ?? r.favorite });
+    }
+  });
+  return { recipes: pack.recipes.length, categories: pack.categories.length };
+}
 
 // Revisões e lembretes (Fase 3) ------------------------------------------------------------------
 export async function logReview(date: ISODate, note: string | undefined, database: CorpoDB = db): Promise<void> {

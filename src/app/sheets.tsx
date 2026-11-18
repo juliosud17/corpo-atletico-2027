@@ -17,7 +17,7 @@ export type SheetRequest =
   | { kind: 'water'; date?: ISODate }
   | { kind: 'plate'; date?: ISODate; meal?: string }
   | { kind: 'meal'; date: ISODate; meal: string }
-  | { kind: 'recipePick'; date: ISODate; meal?: string; recipeId?: string }
+  | { kind: 'recipePick'; date: ISODate; meal?: string; recipeId?: string; portions?: number }
   | { kind: 'measure'; entry?: BodyMeasurement }
   | { kind: 'recovery'; date?: ISODate; entry?: RecoveryEntry }
   | { kind: 'workout'; date?: ISODate; planId?: string; session?: WorkoutSession };
@@ -39,7 +39,7 @@ export function SheetsProvider({ children }: { children: ReactNode }) {
       {req?.kind === 'water' && <WaterSheet date={req.date} onClose={close} />}
       {req?.kind === 'plate' && <PlateSheet date={req.date} meal={req.meal} onClose={close} />}
       {req?.kind === 'meal' && <MealSheet date={req.date} meal={req.meal} onClose={close} />}
-      {req?.kind === 'recipePick' && <RecipePickSheet date={req.date} meal={req.meal} recipeId={req.recipeId} onClose={close} />}
+      {req?.kind === 'recipePick' && <RecipePickSheet date={req.date} meal={req.meal} recipeId={req.recipeId} portions={req.portions} onClose={close} />}
       {req?.kind === 'measure' && <MeasurementSheet entry={req.entry} onClose={close} />}
       {req?.kind === 'recovery' && <RecoverySheet date={req.date} entry={req.entry} onClose={close} />}
       {req?.kind === 'workout' && <WorkoutLogSheet date={req.date} planId={req.planId} session={req.session} onClose={close} />}

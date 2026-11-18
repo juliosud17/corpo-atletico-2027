@@ -151,6 +151,30 @@ export interface RecipeIngredient {
   amount?: number;
   /** Ingrediente sem calorias relevantes (sal, água, temperos a gosto). */
   ignored?: boolean;
+  /** Exibição (receitas prontas): nome, medida caseira e peso informado pela receita. */
+  name?: string;
+  measure?: string;
+  grams?: number;
+}
+
+/** Valores nutricionais por porção declarados pela própria receita (fonte externa), usados só quando a conta TACO está incompleta. */
+export interface DeclaredNutrition {
+  kcal: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+  fiberG?: number;
+  source: string;
+}
+
+export interface RecipeCategory {
+  id: ID;
+  name: string;
+  order: number;
+  /** Foto (data URL JPEG, já reduzida no aparelho). */
+  image?: string;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
 }
 
 export interface Recipe {
@@ -164,6 +188,13 @@ export interface Recipe {
   sourceUrl?: string;
   notes?: string;
   favorite?: boolean;
+  categoryIds?: ID[];
+  /** Foto (data URL JPEG, já reduzida no aparelho). */
+  image?: string;
+  prepMinutes?: number;
+  steps?: string[];
+  author?: string;
+  declared?: DeclaredNutrition;
   createdAt: ISODateTime;
   updatedAt: ISODateTime;
 }
@@ -342,6 +373,8 @@ export interface Settings {
   onboardingDone: boolean;
   theme: 'dark' | 'light' | 'system';
   accent: 'orange' | 'green' | 'blue';
+  /** Categorias padrão de receitas já criadas (não recria as apagadas). */
+  recipeCategoriesSeeded?: boolean;
   /** Versão do visual aplicada (2 = estilo laranja/condensado). */
   designVersion?: number;
   /** Percentual das metas diárias por refeição (rótulo → %). */
@@ -385,6 +418,7 @@ export interface BackupFile {
   settings: Settings | null;
   /** Opcional: metadados das fotos (sempre exportados) e conteúdo em base64 (só se o usuário pedir). */
   recipes?: Recipe[];
+  recipeCategories?: RecipeCategory[];
   photos?: ProgressPhoto[];
   photoBlobs?: { id: ID; type: string; base64: string; thumbBase64?: string }[];
 }

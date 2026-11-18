@@ -144,7 +144,7 @@ const completion = z.object({
 });
 
 const settings = z.object({
-  id: z.literal('app'), onboardingDone: z.boolean(), theme: z.enum(['dark', 'light', 'system']), accent: z.enum(['orange', 'green', 'blue']), designVersion: z.number().int().min(0).max(100).optional(),
+  id: z.literal('app'), onboardingDone: z.boolean(), theme: z.enum(['dark', 'light', 'system']), accent: z.enum(['orange', 'green', 'blue']), designVersion: z.number().int().min(0).max(100).optional(), recipeCategoriesSeeded: z.boolean().optional(),
   mealSplits: z.record(z.string().max(80), z.number().min(0).max(100)).optional(),
   timeZone: z.string().max(60), showWeight: z.boolean(), showCalories: z.boolean(), showWorkouts: z.boolean(), showPhotos: z.boolean(),
   trackingPaused: z.boolean(), safetyAcknowledgedAt: isoDateTime.optional(),
@@ -164,6 +164,31 @@ const photoBlob = z.object({ ...base, type: z.string().regex(/^image\/(jpeg|png|
 
 const MAX = 50_000;
 const arr = <T extends z.ZodTypeAny>(s: T) => z.array(s).max(MAX).default([]);
+
+
+const dataUrlImage = z.string().max(3_000_000).regex(/^data:image\/(jpeg|png|webp);base64,/, 'Imagem inválida').optional();
+const base0 = { id };
+export const recipeCategorySchema = z.object({ ...base0, name: text(80).min(1), order: num(0, 100000), image: dataUrlImage, createdAt: isoDateTime, updatedAt: isoDateTime });
+export const recipeSchema = z.object({
+  ...base0, name: text(160).min(1), servings: num(0.1, 1000), cookedWeightG: optNum(1, 100000), sourceUrl: text(1000).optional(),
+  notes: text(4000).optional(), favorite: z.boolean().optional(), createdAt: isoDateTime, updatedAt: isoDateTime,
+  categoryIds: z.array(id).max(30).optional(), image: dataUrlImage, prepMinutes: optNum(0, 10000), steps: z.array(text(2000)).max(60).optional(),
+  author: text(160).optional(),
+  declared: z.object({ kcal: num(0, 20000), proteinG: num(0, 2000), carbsG: num(0, 2000), fatG: num(0, 2000), fiberG: optNum(0, 2000), source: text(200).min(1) }).optional(),
+  ingredients: z.array(z.object({
+    ...base0, text: text(300), foodId: id.optional(), amount: optNum(0, 100000), ignored: z.boolean().optional(),
+    name: text(160).optional(), measure: text(80).optional(), grams: optNum(0, 100000),
+  })).max(200),
+});
+/** Pacote de receitas prontas (arquivo .json importável na aba Receitas). */
+export const recipePackSchema = z.object({
+  app: z.literal('corpo-atletico-2027'),
+  kind: z.literal('recipe-pack'),
+  version: z.literal(1),
+  categories: z.array(recipeCategorySchema).max(500).default([]),
+  recipes: z.array(recipeSchema).max(5000).default([]),
+});
+export type RecipePack = z.infer<typeof recipePackSchema>;
 
 export const backupSchema = z.object({
   app: z.literal('corpo-atletico-2027'),
@@ -186,11 +211,8 @@ export const backupSchema = z.object({
   habits: arr(habit),
   completions: arr(completion),
   settings: settings.nullable(),
-  recipes: z.array(z.object({
-    ...base, name: text(160).min(1), servings: num(0.1, 1000), cookedWeightG: optNum(1, 100000), sourceUrl: text(1000).optional(),
-    notes: text(4000).optional(), favorite: z.boolean().optional(), createdAt: isoDateTime, updatedAt: isoDateTime,
-    ingredients: z.array(z.object({ ...base, text: text(300), foodId: id.optional(), amount: optNum(0, 100000), ignored: z.boolean().optional() })).max(200),
-  })).max(5000).default([]),
+  recipes: z.array(recipeSchema).max(5000).default([]),
+  recipeCategories: z.array(recipeCategorySchema).max(500).default([]),
   photos: z.array(photo).max(5000).default([]),
   photoBlobs: z.array(photoBlob).max(5000).default([]),
 });
@@ -244,6 +266,7 @@ export function backupCounts(b: BackupFile): { label: string; count: number }[] 
     { label: 'Marcos de meta', count: b.milestones.length },
     { label: 'Versões de metas nutricionais', count: b.targets.length },
     { label: 'Receitas', count: b.recipes?.length ?? 0 },
+    { label: 'Categorias de receitas', count: b.recipeCategories?.length ?? 0 },
     { label: 'Fotos (dados)', count: b.photos?.length ?? 0 },
     { label: 'Fotos (imagens incluídas)', count: b.photoBlobs?.length ?? 0 },
   ];

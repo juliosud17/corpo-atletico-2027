@@ -21,7 +21,7 @@ const FRACTIONS: Record<string, number> = { '½': 0.5, '¼': 0.25, '¾': 0.75, '
 
 export interface ParsedLine { text: string; quantity?: number; unit: ParsedUnit; name: string }
 
-function parseQuantity(s: string): { q?: number; rest: string } {
+export function parseQuantity(s: string): { q?: number; rest: string } {
   let t = s.trim();
   for (const [k, v] of Object.entries(FRACTIONS)) t = t.replace(new RegExp(`(\\d)\\s*${k}`), (_, d) => String(Number(d) + v)).replace(k, String(v));
   // "1 e 1/2", "1 1/2", "1/2", "1,5", "1.5", "2-3" (usa o primeiro)
@@ -305,8 +305,71 @@ export function suggestPortions(ps: PerServing, targetKcal: number): PortionSugg
 }
 
 export function formatPortions(p: number): string {
-  const whole = Math.floor(p), frac = p - whole;
-  const f = Math.abs(frac - 0.25) < 0.01 ? '¼' : Math.abs(frac - 0.5) < 0.01 ? '½' : Math.abs(frac - 0.75) < 0.01 ? '¾' : '';
-  const base = whole ? `${whole}${f ? ` ${f}` : ''}` : f || '0';
-  return `${base} ${p > 1 ? 'porções' : 'porção'}`;
+  return `${formatQty(p)} ${p > 1 ? 'porções' : 'porção'}`;
+}
+
+// ------------------------------------------------------------------------------------------------
+// Valor nutricional efetivo e escala de quantidades (receitas prontas)
+// ------------------------------------------------------------------------------------------------
+export type NutritionBasis = 'taco' | 'declared' | 'partial';
+export interface RecipeNutrition {
+  /** Valor por porção usado no app (registro, sugestões). */
+  perServing: PerServing & { fiberG?: number };
+  basis: NutritionBasis;
+  totals: RecipeTotals;
+  /** Conta pelos ingredientes (TACO/IBGE), mesmo que parcial. */
+  taco: PerServing;
+}
+
+/**
+ * Regra: a conta pelos ingredientes (TACO/IBGE) vale quando está completa.
+ * Se faltar algum ingrediente e a receita trouxer valores informados pela fonte, usa os da fonte.
+ * Sem isso, mostra a conta parcial (sinalizada).
+ */
+export function recipeNutrition(r: Pick<Recipe, 'ingredients' | 'servings' | 'cookedWeightG' | 'declared'>, foods: FoodItem[]): RecipeNutrition {
+  const totals = recipeTotals(r, foods);
+  const taco = perServing(totals, r);
+  if (totals.pending === 0 && totals.counted > 0) return { perServing: taco, basis: 'taco', totals, taco };
+  if (r.declared) {
+    const d = r.declared;
+    return { perServing: { kcal: d.kcal, proteinG: d.proteinG, carbsG: d.carbsG, fatG: d.fatG, fiberG: d.fiberG, grams: taco.grams }, basis: 'declared', totals, taco };
+  }
+  return { perServing: taco, basis: 'partial', totals, taco };
+}
+
+/** Quanto foi consumido em `amount` porções (ou gramas do preparo pronto). */
+export function eatenFromRecipe(n: RecipeNutrition, amount: number, mode: 'portions' | 'grams') {
+  const ps = n.perServing;
+  const factor = mode === 'portions' ? amount : ps.grams ? amount / ps.grams : NaN;
+  if (!Number.isFinite(factor) || factor <= 0) return null;
+  return { kcal: ps.kcal * factor, proteinG: ps.proteinG * factor, carbsG: ps.carbsG * factor, fatG: ps.fatG * factor };
+}
+
+/** 0,5 → "½", 1,25 → "1 ¼", 2,4 → "2,4". */
+export function formatQty(q: number): string {
+  const whole = Math.floor(q + 1e-9), frac = q - whole;
+  const near = (x: number) => Math.abs(frac - x) < 0.04;
+  const f = near(0.25) ? '¼' : near(0.5) ? '½' : near(0.75) ? '¾' : near(1 / 3) ? '⅓' : near(2 / 3) ? '⅔' : '';
+  if (f) return whole ? `${whole} ${f}` : f;
+  if (frac < 0.04 || frac > 0.96) return String(Math.round(q));
+  return String(Math.round(q * 10) / 10).replace('.', ',');
+}
+
+/** Multiplica a quantidade no início da medida: ("½ xícara", 2) → "1 xícara". Sem número, mantém o texto. */
+export function scaleMeasure(measure: string, factor: number): string {
+  if (Math.abs(factor - 1) < 1e-9) return measure;
+  const { q, rest } = parseQuantity(measure);
+  if (q === undefined) return measure;
+  return `${formatQty(q * factor)}${rest.startsWith(' ') || !rest ? '' : ' '}${rest}`.trim();
+}
+
+/** Nome e medida de um ingrediente para exibição, já escalados. */
+export function ingredientDisplay(ing: RecipeIngredient, factor = 1): { name: string; measure?: string } {
+  const gv = ing.grams !== undefined ? ing.grams * factor : undefined;
+  const g = gv === undefined ? undefined : `${gv >= 10 ? Math.round(gv) : String(Math.round(gv * 10) / 10).replace('.', ',')} g`;
+  if (ing.name) {
+    const m = ing.measure ? scaleMeasure(ing.measure, factor) : undefined;
+    return { name: ing.name, measure: m && g ? `${m} (${g})` : m ?? g };
+  }
+  return { name: scaleMeasure(ing.text, factor) };
 }

@@ -1,74 +1,365 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useMemo, useState } from 'react';
-import { Alert, Button, Card, ConfirmDialog, EmptyState, Field, Segmented, Select, Sheet, TextInput, cx, useToast } from '../../components/ui';
-import { IconBook, IconLink, IconPlus } from '../../components/ui/icons';
+import { useMemo, useRef, useState } from 'react';
+import { Alert, Button, Chips, ConfirmDialog, EmptyState, Field, Segmented, Select, Sheet, TextInput, cx, useToast } from '../../components/ui';
+import { IconClock, IconLink, IconPlus, IconSearch } from '../../components/ui/icons';
 import { useSave, useSettingsOrDefault, useToday } from '../../app/hooks';
 import { useSheets } from '../../app/sheets';
 import { db, uid } from '../../data/db';
-import { deleteRecipe, saveFoodLog, saveRecipe } from '../../data/repo';
+import { imageToDataUrl } from '../../data/images';
+import {
+  deleteRecipe, deleteRecipeCategory, importRecipePack, saveFoodLog, saveRecipe, saveRecipeCategory, setRecipeFavorite,
+} from '../../data/repo';
 import { dayTotals, fmt, fmtInt, nutrientsForAmount, parseDecimal, targetsForDate } from '../../domain/calculations';
 import { localDateTimeToISO, timeInTimeZone } from '../../domain/dates';
 import { mealTargets } from '../../domain/meals';
 import {
-  buildIngredients, consumedFromRecipe, formatPortions, norm, parseRecipeHtml, parseRecipeText, perServing, recipeTotals, suggestPortions,
+  buildIngredients, eatenFromRecipe, formatPortions, formatQty, ingredientDisplay, norm, parseRecipeHtml, parseRecipeText, recipeNutrition,
+  suggestPortions, type RecipeNutrition,
 } from '../../domain/recipes';
-import type { FoodItem, FoodLog, Recipe, RecipeIngredient } from '../../domain/types';
+import type { DeclaredNutrition, FoodItem, FoodLog, Recipe, RecipeCategory, RecipeIngredient } from '../../domain/types';
+import { recipePackSchema } from '../../domain/validations';
 import { UNIT_LABEL, suggestMeal } from '../nutrition/FoodSheet';
 
 type Draft = Omit<Recipe, 'id' | 'createdAt' | 'updatedAt'> & { id?: string };
 
-const emptyDraft = (): Draft => ({ name: '', servings: 4, ingredients: [] });
+const emptyDraft = (categoryId?: string): Draft => ({ name: '', servings: 4, ingredients: [], categoryIds: categoryId ? [categoryId] : undefined });
+
+const BASIS_TEXT: Record<RecipeNutrition['basis'], string> = {
+  taco: 'Calculado pelos ingredientes (TACO/IBGE).',
+  declared: 'Valores informados pela receita: a conta pelos ingredientes ainda está incompleta.',
+  partial: 'Conta parcial: há ingredientes sem dados, o valor real é maior.',
+};
+
+type View = 'categories' | 'favorites' | 'all';
+const VIEW_KEY = 'ca27-recipes-view';
 
 // ------------------------------------------------------------------------------------------------
-// Lista
+// Aba Receitas: categorias (com foto), favoritas e todas
 // ------------------------------------------------------------------------------------------------
 export function RecipesTab({ day }: { day: string }) {
   const recipes = useLiveQuery(() => db.recipes.toArray(), [], [] as Recipe[]);
+  const categories = useLiveQuery(() => db.recipeCategories.orderBy('order').toArray(), [], [] as RecipeCategory[]);
   const foods = useLiveQuery(() => db.foodItems.toArray(), [], [] as FoodItem[]);
   const { open } = useSheets();
+  const [view, setViewState] = useState<View>(() => { try { return (sessionStorage.getItem(VIEW_KEY) as View) || 'categories'; } catch { return 'categories'; } });
+  const setView = (v: View) => { setViewState(v); setCategoryId(null); try { sessionStorage.setItem(VIEW_KEY, v); } catch { /* sem armazenamento */ } };
+  const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<string | null>(null);
   const [editing, setEditing] = useState<Draft | null>(null);
   const [importing, setImporting] = useState(false);
+  const [newCategory, setNewCategory] = useState(false);
   const [query, setQuery] = useState('');
-  const list = recipes.filter((r) => !query.trim() || norm(r.name).includes(norm(query))).sort((a, b) => Number(!!b.favorite) - Number(!!a.favorite) || b.updatedAt.localeCompare(a.updatedAt));
+
+  const category = categoryId ? categories.find((c) => c.id === categoryId) : undefined;
+  const q = norm(query.trim());
+  const sorted = [...recipes].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  const list = q ? sorted.filter((r) => norm(r.name).includes(q) || r.ingredients.some((i) => norm(i.name ?? i.text).includes(q)))
+    : category ? sorted.filter((r) => r.categoryIds?.includes(category.id))
+    : view === 'favorites' ? sorted.filter((r) => r.favorite)
+    : sorted;
+  const viewingRecipe = viewing ? recipes.find((r) => r.id === viewing) : undefined;
 
   return (
     <>
-      <Card title="Minhas receitas" subtitle="Importe da internet ou crie a sua" icon={<IconBook />}
-        action={<Button className="!px-3" onClick={() => setEditing(emptyDraft())}><IconPlus /> Criar</Button>}>
-        <Button variant="secondary" className="w-full" onClick={() => setImporting(true)}><IconLink /> Importar da internet</Button>
-        {recipes.length > 3 && <div className="mt-3"><TextInput type="search" aria-label="Buscar receita" placeholder="Buscar receita…" value={query} onChange={(e) => setQuery(e.target.value)} /></div>}
-        <div className="mt-3 space-y-2">
-          {list.length === 0 ? <EmptyState icon="📖">Sua primeira receita aparecerá aqui. Cole uma receita da internet e o app calcula calorias e macros por porção.</EmptyState> : list.map((r) => {
-            const t = recipeTotals(r, foods);
-            const ps = perServing(t, r);
-            return (
-              <div key={r.id} className="rounded-3xl border border-line bg-card2/40 p-4">
-                <button type="button" className="flex w-full items-start justify-between gap-3 text-left" onClick={() => setEditing(r)} aria-label={`Abrir receita ${r.name}`}>
-                  <span className="min-w-0">
-                    <span className="block text-[17px] font-semibold leading-snug">{r.favorite && <span className="text-accent">★ </span>}{r.name}</span>
-                    <span className="mt-1 block text-xs">
-                      <span className="font-bold uppercase tracking-wide text-accent">Receita</span>
-                      <span className="text-muted"> · rende {fmt(r.servings, r.servings % 1 ? 1 : 0)} {r.servings === 1 ? 'porção' : 'porções'}{ps.grams ? ` · ${fmtInt(ps.grams)} g/porção` : ''}</span>
-                    </span>
-                  </span>
-                  <span className="num shrink-0 text-right">
-                    <span className="block text-[22px] font-bold leading-none">{fmtInt(ps.kcal)} <span className="text-xs font-medium text-muted">KCAL</span></span>
-                    <span className="mt-1 block text-[11px] font-semibold tracking-wide text-muted">P:{fmtInt(ps.proteinG)}G C:{fmtInt(ps.carbsG)}G G:{fmtInt(ps.fatG)}G</span>
-                  </span>
-                </button>
-                {t.pending > 0 && <p className="mt-2 text-xs text-warn">⚠ {t.pending} ingrediente(s) sem quantidade ou alimento: conta parcial.</p>}
-                <div className="mt-3 flex gap-2">
-                  <Button variant="secondary" className="flex-1 !min-h-10 !text-[12px]" onClick={() => open({ kind: 'recipePick', date: day, recipeId: r.id })}>Comer agora</Button>
-                </div>
-              </div>
-            );
-          })}
+      <div className="space-y-4">
+        <div className="relative">
+          <span aria-hidden className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted"><IconSearch /></span>
+          <TextInput type="search" aria-label="Pesquisar receitas" placeholder="Pesquisar receita ou ingrediente" value={query} onChange={(e) => setQuery(e.target.value)} className="!pl-11" />
         </div>
-        <p className="mt-3 text-xs text-muted">Valores por porção, somando os ingredientes com dados da TACO/IBGE. Peso pronto (opcional) permite servir em gramas.</p>
-      </Card>
-      {importing && <ImportRecipeSheet foods={foods} onClose={() => setImporting(false)} onParsed={(d) => { setImporting(false); setEditing(d); }} />}
-      {editing && <RecipeEditor draft={editing} foods={foods} onClose={() => setEditing(null)} />}
+        {!q && <Chips label="Mostrar" value={view} onChange={setView} options={[{ value: 'categories', label: 'Categorias' }, { value: 'favorites', label: '♥ Favoritas' }, { value: 'all', label: 'Todas' }]} />}
+        <div className="flex gap-2">
+          <Button variant="secondary" className="flex-1 !min-h-10 !text-[12px]" onClick={() => setEditing(emptyDraft(category?.id))}><IconPlus /> Criar</Button>
+          <Button variant="secondary" className="flex-1 !min-h-10 !text-[12px]" onClick={() => setImporting(true)}><IconLink /> Importar</Button>
+        </div>
+
+        {!q && view === 'categories' && !category && (
+          <CategoryGrid categories={categories} recipes={recipes} onOpen={setCategoryId} onNew={() => setNewCategory(true)} />
+        )}
+        {!q && category && <CategoryHeader category={category} count={list.length} onBack={() => setCategoryId(null)} />}
+        {(q || category || view !== 'categories') && (
+          list.length === 0
+            ? <EmptyState icon="🍲">{q ? 'Nenhuma receita encontrada.' : category ? 'Nenhuma receita nesta categoria ainda. Crie uma ou importe um pacote de receitas.' : view === 'favorites' ? 'Toque no ♥ de uma receita para ela aparecer aqui.' : 'Crie ou importe sua primeira receita: o app calcula calorias e macros por porção.'}</EmptyState>
+            : <RecipeGrid recipes={list} foods={foods} onOpen={setViewing} />
+        )}
+      </div>
+
+      {viewingRecipe && (
+        <RecipeView recipe={viewingRecipe} foods={foods} categories={categories} onClose={() => setViewing(null)}
+          onEdit={() => { setEditing(viewingRecipe); setViewing(null); }}
+          onRegister={(portions) => { setViewing(null); open({ kind: 'recipePick', date: day, recipeId: viewingRecipe.id, portions }); }} />
+      )}
+      {importing && <ImportRecipeSheet foods={foods} onClose={() => setImporting(false)} onParsed={(d) => { setImporting(false); setEditing({ ...d, categoryIds: category ? [category.id] : undefined }); }} />}
+      {editing && <RecipeEditor draft={editing} foods={foods} categories={categories} onClose={() => setEditing(null)} onSaved={(id) => setViewing(id)} />}
+      {newCategory && <CategorySheet onClose={() => setNewCategory(false)} />}
     </>
+  );
+}
+
+function Placeholder({ label, className }: { label: string; className?: string }) {
+  return (
+    <div aria-hidden className={cx('flex items-center justify-center bg-gradient-to-br from-accent/30 via-card2 to-card2', className)}>
+      <span className="display text-3xl font-bold text-accent/70">{label.slice(0, 2).toUpperCase()}</span>
+    </div>
+  );
+}
+
+function CategoryGrid({ categories, recipes, onOpen, onNew }: { categories: RecipeCategory[]; recipes: Recipe[]; onOpen: (id: string) => void; onNew: () => void }) {
+  return (
+    <ul className="grid grid-cols-2 gap-3">
+      {categories.map((c) => {
+        const inCat = recipes.filter((r) => r.categoryIds?.includes(c.id));
+        const img = c.image ?? inCat.find((r) => r.image)?.image;
+        return (
+          <li key={c.id}>
+            <button type="button" onClick={() => onOpen(c.id)} aria-label={`Categoria ${c.name}: ${inCat.length} receita(s)`}
+              className="block w-full overflow-hidden rounded-3xl border border-line bg-card text-left transition active:scale-[.98]">
+              {img ? <img src={img} alt="" className="aspect-[5/3] w-full object-cover" loading="lazy" /> : <Placeholder label={c.name} className="aspect-[5/3] w-full" />}
+              <span className="block px-3 py-2.5">
+                <span className="block truncate text-[15px] font-semibold">{c.name}</span>
+                <span className="block text-xs text-muted">{inCat.length} {inCat.length === 1 ? 'receita' : 'receitas'}</span>
+              </span>
+            </button>
+          </li>
+        );
+      })}
+      <li>
+        <button type="button" onClick={onNew} className="flex h-full min-h-32 w-full flex-col items-center justify-center gap-1 rounded-3xl border border-dashed border-line text-muted">
+          <IconPlus /><span className="text-xs font-semibold uppercase tracking-wide">Nova categoria</span>
+        </button>
+      </li>
+    </ul>
+  );
+}
+
+function CategoryHeader({ category, count, onBack }: { category: RecipeCategory; count: number; onBack: () => void }) {
+  const [editing, setEditing] = useState(false);
+  return (
+    <div className="flex items-center gap-2">
+      <button type="button" onClick={onBack} aria-label="Voltar para categorias" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-line text-lg">‹</button>
+      <div className="min-w-0 flex-1">
+        <p className="display truncate text-[22px] font-semibold leading-tight">{category.name}</p>
+        <p className="text-xs text-muted">{count} {count === 1 ? 'receita' : 'receitas'}</p>
+      </div>
+      <Button variant="ghost" className="!min-h-10 !px-3 !text-[12px]" onClick={() => setEditing(true)}>Editar</Button>
+      {editing && <CategorySheet category={category} onClose={() => setEditing(false)} onDeleted={onBack} />}
+    </div>
+  );
+}
+
+function PhotoPicker({ value, onChange, label }: { value?: string; onChange: (v: string | undefined) => void; label: string }) {
+  const input = useRef<HTMLInputElement>(null);
+  const { show } = useToast();
+  const [busy, setBusy] = useState(false);
+  return (
+    <div>
+      <p className="mb-1.5 text-sm font-medium">{label}</p>
+      <div className="flex items-center gap-3">
+        {value ? <img src={value} alt="Foto atual" className="h-20 w-28 rounded-2xl object-cover" /> : <Placeholder label="📷" className="h-20 w-28 rounded-2xl" />}
+        <div className="flex flex-col gap-1.5">
+          <Button variant="secondary" className="!min-h-9 !text-[12px]" disabled={busy} onClick={() => input.current?.click()}>{busy ? 'Processando…' : value ? 'Trocar foto' : 'Escolher foto'}</Button>
+          {value && <button type="button" className="text-xs text-muted underline" onClick={() => onChange(undefined)}>Remover foto</button>}
+        </div>
+      </div>
+      <input ref={input} type="file" accept="image/*" className="hidden" aria-label={label}
+        onChange={async (e) => {
+          const f = e.target.files?.[0]; e.target.value = '';
+          if (!f) return;
+          setBusy(true);
+          try { onChange(await imageToDataUrl(f)); } catch (err) { show(err instanceof Error ? err.message : 'Não foi possível usar esta imagem.', 'error'); } finally { setBusy(false); }
+        }} />
+      <p className="mt-1 text-xs text-muted">A foto é reduzida e guardada só neste aparelho (e no seu backup).</p>
+    </div>
+  );
+}
+
+function CategorySheet({ category, onClose, onDeleted }: { category?: RecipeCategory; onClose: () => void; onDeleted?: () => void }) {
+  const save = useSave();
+  const [name, setName] = useState(category?.name ?? '');
+  const [image, setImage] = useState<string | undefined>(category?.image);
+  const [del, setDel] = useState(false);
+  return (
+    <>
+      <Sheet open onClose={onClose} title={category ? 'Editar categoria' : 'Nova categoria'}
+        footer={<div className="flex gap-2">
+          {category && <Button variant="secondary" aria-label="Excluir categoria" onClick={() => setDel(true)}>🗑️</Button>}
+          <Button className="flex-1" disabled={!name.trim()} onClick={async () => { const id = await save(() => saveRecipeCategory({ id: category?.id, name: name.trim(), image }), 'Categoria salva'); if (id) onClose(); }}>Salvar</Button>
+        </div>}>
+        <div className="space-y-4">
+          <Field label="Nome">{(id) => <TextInput id={id} value={name} onChange={(e) => setName(e.target.value)} placeholder="ex.: Marmitas" maxLength={80} />}</Field>
+          <PhotoPicker label="Foto da categoria" value={image} onChange={setImage} />
+          {!image && <p className="text-xs text-muted">Sem foto, a categoria usa a foto da primeira receita dela.</p>}
+        </div>
+      </Sheet>
+      <ConfirmDialog open={del} danger title="Excluir categoria?" confirmLabel="Excluir" onCancel={() => setDel(false)}
+        onConfirm={async () => { if (category) { const ok = await save(() => deleteRecipeCategory(category.id).then(() => true), 'Categoria excluída'); if (ok) { setDel(false); onClose(); onDeleted?.(); } } }}>
+        <p>As receitas desta categoria não são apagadas: só deixam de aparecer nela.</p>
+      </ConfirmDialog>
+    </>
+  );
+}
+
+function RecipeGrid({ recipes, foods, onOpen }: { recipes: Recipe[]; foods: FoodItem[]; onOpen: (id: string) => void }) {
+  return (
+    <ul className="grid grid-cols-2 gap-3">
+      {recipes.map((r) => {
+        const n = recipeNutrition(r, foods);
+        return (
+          <li key={r.id}>
+            <button type="button" onClick={() => onOpen(r.id)} aria-label={`Abrir receita ${r.name}`}
+              className="relative block h-full w-full overflow-hidden rounded-3xl border border-line bg-card text-left transition active:scale-[.98]">
+              {r.image ? <img src={r.image} alt="" className="aspect-square w-full object-cover" loading="lazy" /> : <Placeholder label={r.name} className="aspect-square w-full" />}
+              {r.favorite && <span aria-label="Favorita" className="absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-accent">♥</span>}
+              <span className="block px-3 py-2.5">
+                <span className="line-clamp-2 block text-[14px] font-semibold leading-snug">{r.name}</span>
+                <span className="num mt-1 block text-xs text-muted">
+                  <b className="text-fg">{fmtInt(n.perServing.kcal)}</b> kcal · P {fmtInt(n.perServing.proteinG)} g{n.basis === 'partial' ? ' ⚠' : ''}
+                </span>
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+// ------------------------------------------------------------------------------------------------
+// Página da receita
+// ------------------------------------------------------------------------------------------------
+function RecipeView({ recipe, foods, categories, onClose, onEdit, onRegister }: {
+  recipe: Recipe; foods: FoodItem[]; categories: RecipeCategory[]; onClose: () => void; onEdit: () => void; onRegister: (portions?: number) => void;
+}) {
+  const settings = useSettingsOrDefault();
+  const today = useToday();
+  const save = useSave();
+  const targetsAll = useLiveQuery(() => db.targets.toArray(), []) ?? [];
+  const [servingsView, setServingsView] = useState(recipe.servings);
+  const [adjust, setAdjust] = useState(1);
+  const n = recipeNutrition(recipe, foods);
+  const ps = n.perServing;
+  const tg = targetsForDate(targetsAll, today);
+  const meals = tg ? mealTargets(settings.meals, tg, settings.mealSplits) : [];
+  const ingFactor = (servingsView / (recipe.servings || 1)) * adjust;
+  const cats = categories.filter((c) => recipe.categoryIds?.includes(c.id));
+  const minAdj = 0.5, maxAdj = 2;
+  const fitMeal = (kcal: number) => setAdjust(Math.min(maxAdj, Math.max(minAdj, Math.round((kcal / ps.kcal) * 20) / 20)));
+
+  return (
+    <Sheet open onClose={onClose} title="Receita"
+      footer={<div className="flex gap-2">
+        <Button variant="secondary" onClick={onEdit}>Editar</Button>
+        <Button className="flex-1" onClick={() => onRegister(Math.abs(adjust - 1) > 0.01 ? Math.round(adjust * 100) / 100 : undefined)}>Registrar refeição</Button>
+      </div>}>
+      <div className="space-y-5">
+        {recipe.image && <img src={recipe.image} alt={`Foto: ${recipe.name}`} className="-mx-1 aspect-square w-[calc(100%+0.5rem)] max-w-none rounded-3xl object-cover" />}
+        {cats.length > 0 && (
+          <ul className="flex flex-wrap gap-2" aria-label="Categorias">
+            {cats.map((c) => <li key={c.id} className="rounded-full bg-accent px-3.5 py-1.5 text-xs font-semibold text-accent-fg">{c.name}</li>)}
+          </ul>
+        )}
+        <div className="flex items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <h3 className="text-[26px] font-bold leading-tight">{recipe.name}</h3>
+            {recipe.author && <p className="mt-1 text-sm text-muted">{recipe.author}</p>}
+          </div>
+          <button type="button" aria-pressed={!!recipe.favorite} aria-label={recipe.favorite ? 'Tirar das favoritas' : 'Marcar como favorita'}
+            onClick={() => void save(() => setRecipeFavorite(recipe.id, !recipe.favorite).then(() => true))}
+            className={cx('flex h-12 w-12 shrink-0 items-center justify-center rounded-full border text-2xl', recipe.favorite ? 'border-accent text-accent' : 'border-line text-muted')}>
+            {recipe.favorite ? '♥' : '♡'}
+          </button>
+        </div>
+
+        <p className="num flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-line pb-4 text-[15px] text-muted">
+          {recipe.prepMinutes ? <span className="flex items-center gap-1.5"><span className="text-accent"><IconClock /></span>{fmtInt(recipe.prepMinutes)} min</span> : null}
+          <span className="flex items-center gap-1.5"><span aria-hidden className="text-accent">🔥</span>{fmtInt(ps.kcal * adjust)} kcal por porção</span>
+          <span>rende {formatQty(recipe.servings)} {recipe.servings === 1 ? 'porção' : 'porções'}</span>
+        </p>
+
+        <section aria-labelledby="nut-title">
+          <h4 id="nut-title" className="text-lg font-bold">Informação nutricional <span className="text-sm font-normal text-muted">(por porção)</span></h4>
+          <div className="mt-2 rounded-3xl border border-line bg-card2/40 p-4">
+            <dl className="num grid grid-cols-2 gap-y-3 text-center">
+              {[['Carboidratos', ps.carbsG], ['Proteínas', ps.proteinG], ['Fibras', ps.fiberG], ['Gorduras', ps.fatG]].map(([l, v]) => (
+                <div key={l as string}><dt className="text-sm font-semibold text-muted">{l}</dt><dd className="mt-0.5">{v === undefined ? '—' : `${fmt((v as number) * adjust)} g`}</dd></div>
+              ))}
+            </dl>
+            <div className="num mt-3 flex justify-between border-t border-line pt-3 font-semibold"><span>Calorias</span><span>{fmtInt(ps.kcal * adjust)} kcal</span></div>
+            {ps.grams ? <p className="num mt-1 text-right text-xs text-muted">porção ≈ {fmtInt(ps.grams * adjust)} g pronto</p> : null}
+          </div>
+          <p className={cx('mt-2 text-xs', n.basis === 'partial' ? 'text-warn' : 'text-muted')}>
+            {BASIS_TEXT[n.basis]}{n.basis === 'declared' && recipe.declared ? ` Fonte: ${recipe.declared.source}.` : ''}
+            {n.basis !== 'taco' && n.totals.counted > 0 ? ` Pelos ingredientes com dados: ${fmtInt(n.taco.kcal)} kcal · P ${fmt(n.taco.proteinG)} g (faltam ${n.totals.pending}).` : ''}
+          </p>
+        </section>
+
+        {ps.kcal > 0 && (
+          <section aria-labelledby="adj-title">
+            <h4 id="adj-title" className="text-lg font-bold">Ajuste da porção</h4>
+            <p className="text-xs text-muted">Deslize para aumentar ou diminuir a porção: as calorias e os ingredientes mudam na mesma proporção.</p>
+            <input type="range" min={minAdj} max={maxAdj} step={0.05} value={adjust} onChange={(e) => setAdjust(Number(e.target.value))}
+              aria-label="Tamanho da porção" aria-valuetext={`${Math.round(adjust * 100)}% da porção, ${fmtInt(ps.kcal * adjust)} kcal`}
+              className="mt-3 w-full accent-[var(--accent)]" />
+            <p className="num flex justify-between text-xs text-muted"><span>½ porção</span><b className="text-fg">{Math.round(adjust * 100)}% · {fmtInt(ps.kcal * adjust)} kcal</b><span>2 porções</span></p>
+            {meals.length > 0 && (
+              <div className="mt-3">
+                <p className="eyebrow mb-1.5">Ajustar para a meta da refeição</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {meals.map((m) => (
+                    <button key={m.label} type="button" onClick={() => fitMeal(m.kcal)} className="num rounded-full border border-line px-3 py-1.5 text-sm hover:border-accent">
+                      {m.label}: <b>{fmtInt(m.kcal)}</b> kcal
+                    </button>
+                  ))}
+                  {Math.abs(adjust - 1) > 0.01 && <button type="button" onClick={() => setAdjust(1)} className="rounded-full px-3 py-1.5 text-sm text-accent underline">Porção original</button>}
+                </div>
+                <p className="mt-1 text-xs text-muted">Aqui a receita sozinha cobre a meta. Se for comer com outros alimentos, registre pela refeição: o app desconta o que já foi registrado.</p>
+              </div>
+            )}
+          </section>
+        )}
+
+        <section aria-labelledby="ing-title">
+          <div className="flex items-center justify-between gap-2">
+            <h4 id="ing-title" className="text-lg font-bold">Ingredientes</h4>
+            <div className="flex items-center gap-2">
+              <button type="button" aria-label="Menos porções" disabled={servingsView <= 1} onClick={() => setServingsView((v) => Math.max(1, v - 1))}
+                className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-accent text-xl font-bold text-accent disabled:opacity-40">−</button>
+              <span className="num min-w-[5.5rem] text-center text-[15px]" aria-live="polite">{formatQty(servingsView)} {servingsView === 1 ? 'porção' : 'porções'}</span>
+              <button type="button" aria-label="Mais porções" onClick={() => setServingsView((v) => v + 1)}
+                className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-accent text-xl font-bold text-accent">+</button>
+            </div>
+          </div>
+          {Math.abs(ingFactor - 1) > 0.01 && <p className="mt-1 text-xs text-accent">Quantidades ajustadas para {formatQty(servingsView)} porções{Math.abs(adjust - 1) > 0.01 ? ` de ${Math.round(adjust * 100)}%` : ''}.</p>}
+          <ul className="mt-2 space-y-2">
+            {recipe.ingredients.map((ing) => {
+              const d = ingredientDisplay(ing, ingFactor);
+              const pending = !ing.ignored && (!ing.foodId || ing.amount === undefined);
+              return (
+                <li key={ing.id} className="flex items-start justify-between gap-3 rounded-2xl border border-line px-4 py-3">
+                  <span className="min-w-0 font-medium">{d.name}{pending && <span className="block text-[11px] font-normal text-warn">sem dados na base</span>}</span>
+                  {d.measure && <span className="num shrink-0 text-right text-sm text-muted">{d.measure}</span>}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+
+        {recipe.steps && recipe.steps.length > 0 && (
+          <section aria-labelledby="steps-title">
+            <h4 id="steps-title" className="text-lg font-bold">Modo de preparo</h4>
+            <ol className="mt-2 space-y-2">
+              {recipe.steps.map((st, i) => (
+                <li key={i} className="flex gap-3 rounded-2xl border border-line p-4">
+                  <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 border-accent text-sm font-bold text-accent">{i + 1}</span>
+                  <span className="text-[15px] leading-relaxed">{st}</span>
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
+        {recipe.notes && <section><h4 className="text-lg font-bold">Anotações</h4><p className="mt-1 whitespace-pre-line text-sm text-muted">{recipe.notes}</p></section>}
+        {recipe.sourceUrl && /^https?:\/\//.test(recipe.sourceUrl) && <a href={recipe.sourceUrl} target="_blank" rel="noopener noreferrer" className="block text-sm text-accent underline">Abrir receita original ↗</a>}
+      </div>
+    </Sheet>
   );
 }
 
@@ -80,6 +371,18 @@ function ImportRecipeSheet({ foods, onClose, onParsed }: { foods: FoodItem[]; on
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const packInput = useRef<HTMLInputElement>(null);
+  const save = useSave();
+  const { show } = useToast();
+
+  async function importPack(file: File) {
+    let json: unknown;
+    try { json = JSON.parse(await file.text()); } catch { show('O arquivo não é um JSON válido.', 'error'); return; }
+    const parsed = recipePackSchema.safeParse(json);
+    if (!parsed.success) { show('Este arquivo não é um pacote de receitas do Corpo Atlético 2027.', 'error'); return; }
+    const r = await save(() => importRecipePack(parsed.data));
+    if (r) { show(`${r.recipes} receita(s) e ${r.categories} categoria(s) importadas`, 'ok'); onClose(); }
+  }
 
   function fromParsed(p: { name?: string; servings?: number; ingredients: string[]; sourceUrl?: string }) {
     if (!p.ingredients.length) { setMsg('Não encontrei a lista de ingredientes. Cole o texto com uma linha por ingrediente (ex.: “500 g de peito de frango”).'); return; }
@@ -108,6 +411,14 @@ function ImportRecipeSheet({ foods, onClose, onParsed }: { foods: FoodItem[]; on
     <Sheet open onClose={onClose} title="Importar receita"
       footer={<Button className="w-full" disabled={!text.trim()} onClick={() => fromParsed({ ...parseRecipeText(text), sourceUrl: parseRecipeText(text).sourceUrl ?? (url.trim() || undefined) })}>Ler receita colada</Button>}>
       <div className="space-y-4">
+        <div className="rounded-3xl border border-accent/40 bg-accent-soft p-4">
+          <p className="font-semibold">Pacote de receitas prontas</p>
+          <p className="mt-0.5 text-xs text-muted">Arquivo .json com receitas, fotos e categorias. Importar de novo atualiza, sem duplicar.</p>
+          <Button className="mt-3 w-full" onClick={() => packInput.current?.click()}>Escolher arquivo de receitas</Button>
+          <input ref={packInput} type="file" accept="application/json,.json" className="hidden" aria-label="Arquivo de pacote de receitas"
+            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void importPack(f); }} />
+        </div>
+        <p className="eyebrow">Ou uma receita da internet</p>
         <Field label="Link da receita (opcional)">{(id) => <TextInput id={id} type="url" inputMode="url" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://…" />}</Field>
         <Button variant="secondary" className="w-full" disabled={!url.trim() || busy} onClick={tryUrl}>{busy ? 'Tentando ler…' : 'Tentar ler direto do link'}</Button>
         {msg && <Alert tone="info">{msg}</Alert>}
@@ -156,7 +467,7 @@ function IngredientRow({ ing, foods, onChange, onRemove }: { ing: RecipeIngredie
       <div className="flex items-start gap-2">
         <span aria-hidden className={cx('mt-0.5 w-4 shrink-0 text-center font-bold', badge[1])}>{badge[0]}</span>
         <div className="min-w-0 flex-1">
-          <p className="text-sm">{ing.text}</p>
+          <p className="text-sm">{ing.name ? <>{ing.name}{ing.measure || ing.grams !== undefined ? <span className="text-muted"> · {ingredientDisplay(ing).measure}</span> : null}</> : ing.text}</p>
           {ing.ignored ? <p className="text-xs text-muted">Ignorado (sem calorias relevantes)</p>
             : food ? <p className="text-xs text-muted">→ {food.name}</p>
             : <p className="text-xs text-warn">Escolha o alimento correspondente na base.</p>}
@@ -179,13 +490,13 @@ function IngredientRow({ ing, foods, onChange, onRemove }: { ing: RecipeIngredie
       <div className="mt-1 pl-6">
         <button type="button" className="text-xs text-muted underline" onClick={() => onChange({ ...ing, ignored: !ing.ignored })}>{ing.ignored ? 'Contar este ingrediente' : 'Ignorar (sal, água, temperos)'}</button>
       </div>
-      {picking && <FoodPicker foods={foods} onCancel={() => setPicking(false)} onPick={(f) => { onChange({ ...ing, foodId: f.id, ignored: false }); setPicking(false); }} />}
+      {picking && <FoodPicker foods={foods} onCancel={() => setPicking(false)} onPick={(f) => { onChange({ ...ing, foodId: f.id, ignored: false, amount: ing.amount ?? (ing.grams !== undefined && f.referenceUnit === 'g' ? ing.grams : undefined) }); setPicking(false); }} />}
       {status === 'noamount' && food && <p className="mt-1 pl-6 text-xs text-warn">Informe em {UNIT_LABEL[food.referenceUnit]} (xícaras/unidades de sólidos variam de peso — pese ou use o rótulo).</p>}
     </li>
   );
 }
 
-export function RecipeEditor({ draft, foods, onClose }: { draft: Draft; foods: FoodItem[]; onClose: () => void }) {
+export function RecipeEditor({ draft, foods, categories, onClose, onSaved }: { draft: Draft; foods: FoodItem[]; categories: RecipeCategory[]; onClose: () => void; onSaved?: (id: string) => void }) {
   const save = useSave();
   const settings = useSettingsOrDefault();
   const today = useToday();
@@ -195,12 +506,32 @@ export function RecipeEditor({ draft, foods, onClose }: { draft: Draft; foods: F
   const [weight, setWeight] = useState(draft.cookedWeightG ? String(draft.cookedWeightG) : '');
   const [newLine, setNewLine] = useState('');
   const [del, setDel] = useState(false);
-  const recipe: Draft = { ...r, servings: parseDecimal(servings) ?? 0, cookedWeightG: parseDecimal(weight) ?? undefined };
-  const t = recipeTotals(recipe, foods);
-  const ps = perServing(t, recipe);
+  const [minutes, setMinutes] = useState(draft.prepMinutes ? String(draft.prepMinutes) : '');
+  const [stepsText, setStepsText] = useState((draft.steps ?? []).join('\n'));
+  const [decl, setDecl] = useState({
+    kcal: draft.declared ? String(draft.declared.kcal).replace('.', ',') : '', proteinG: draft.declared ? String(draft.declared.proteinG).replace('.', ',') : '',
+    carbsG: draft.declared ? String(draft.declared.carbsG).replace('.', ',') : '', fatG: draft.declared ? String(draft.declared.fatG).replace('.', ',') : '',
+    fiberG: draft.declared?.fiberG !== undefined ? String(draft.declared.fiberG).replace('.', ',') : '', source: draft.declared?.source ?? '',
+  });
+  const [showDecl, setShowDecl] = useState(!!draft.declared);
+  const declared: DeclaredNutrition | undefined = (() => {
+    const k = parseDecimal(decl.kcal), p = parseDecimal(decl.proteinG), c = parseDecimal(decl.carbsG), f = parseDecimal(decl.fatG);
+    if (k === null || p === null || c === null || f === null || !decl.source.trim()) return undefined;
+    const fib = parseDecimal(decl.fiberG);
+    return { kcal: k, proteinG: p, carbsG: c, fatG: f, fiberG: fib ?? undefined, source: decl.source.trim().slice(0, 200) };
+  })();
+  const declIncomplete = showDecl && !declared && Object.values(decl).some((v) => v.trim());
+  const recipe: Draft = {
+    ...r, servings: parseDecimal(servings) ?? 0, cookedWeightG: parseDecimal(weight) ?? undefined, prepMinutes: parseDecimal(minutes) ?? undefined,
+    steps: stepsText.split('\n').map((x) => x.trim()).filter(Boolean), declared: showDecl ? declared : undefined,
+  };
+  if (!recipe.steps?.length) delete recipe.steps;
+  const nut = recipeNutrition(recipe, foods);
+  const t = nut.totals;
+  const ps = nut.perServing;
   const tg = targetsForDate(targetsAll, today);
   const meals = tg ? mealTargets(settings.meals, tg, settings.mealSplits) : [];
-  const valid = r.name.trim() && recipe.servings > 0;
+  const valid = r.name.trim() && recipe.servings > 0 && !declIncomplete;
 
   const setIng = (i: number, ing: RecipeIngredient) => setR((x) => ({ ...x, ingredients: x.ingredients.map((y, j) => (j === i ? ing : y)) }));
 
@@ -209,7 +540,7 @@ export function RecipeEditor({ draft, foods, onClose }: { draft: Draft; foods: F
       <Sheet open onClose={onClose} title={draft.id ? 'Receita' : 'Nova receita'}
         footer={<div className="flex gap-2">
           {draft.id && <Button variant="secondary" aria-label="Excluir receita" onClick={() => setDel(true)}>🗑️</Button>}
-          <Button className="flex-1" disabled={!valid} onClick={async () => { const id = await save(() => saveRecipe({ ...recipe, name: r.name.trim() }), 'Receita salva'); if (id) onClose(); }}>Salvar receita</Button>
+          <Button className="flex-1" disabled={!valid} onClick={async () => { const id = await save(() => saveRecipe({ ...recipe, name: r.name.trim() }), 'Receita salva'); if (id) { onClose(); onSaved?.(id); } }}>Salvar receita</Button>
         </div>}>
         <div className="space-y-4">
           <Field label="Nome">{(id) => <TextInput id={id} value={r.name} onChange={(e) => setR({ ...r, name: e.target.value })} placeholder="ex.: Frango ao molho" />}</Field>
@@ -217,14 +548,30 @@ export function RecipeEditor({ draft, foods, onClose }: { draft: Draft; foods: F
             <Field label="Rende (porções)">{(id) => <TextInput id={id} inputMode="decimal" value={servings} onChange={(e) => setServings(e.target.value)} />}</Field>
             <Field label="Peso pronto (g)" hint="Opcional: pese a panela/forma pronta (sem o recipiente).">{(id) => <TextInput id={id} inputMode="decimal" value={weight} onChange={(e) => setWeight(e.target.value)} placeholder="—" />}</Field>
           </div>
-          <label className="flex min-h-10 items-center gap-2 text-sm"><input type="checkbox" className="h-5 w-5 accent-[var(--accent)]" checked={!!r.favorite} onChange={(e) => setR({ ...r, favorite: e.target.checked })} /> Receita favorita (★ aparece primeiro)</label>
+          <Field label="Tempo de preparo (min)">{(id) => <TextInput id={id} inputMode="numeric" value={minutes} onChange={(e) => setMinutes(e.target.value)} placeholder="—" />}</Field>
+          <label className="flex min-h-10 items-center gap-2 text-sm"><input type="checkbox" className="h-5 w-5 accent-[var(--accent)]" checked={!!r.favorite} onChange={(e) => setR({ ...r, favorite: e.target.checked })} /> Receita favorita (♥)</label>
+          <PhotoPicker label="Foto da receita" value={r.image} onChange={(image) => setR({ ...r, image })} />
+          {categories.length > 0 && (
+            <div>
+              <p className="mb-1.5 text-sm font-medium">Categorias</p>
+              <div role="group" aria-label="Categorias da receita" className="flex flex-wrap gap-1.5">
+                {categories.map((c) => {
+                  const on = !!r.categoryIds?.includes(c.id);
+                  return (
+                    <button key={c.id} type="button" aria-pressed={on} onClick={() => setR({ ...r, categoryIds: on ? r.categoryIds!.filter((x) => x !== c.id) : [...(r.categoryIds ?? []), c.id] })}
+                      className={cx('min-h-9 rounded-full border px-3 text-xs font-semibold', on ? 'border-accent bg-accent text-accent-fg' : 'border-line text-muted')}>{c.name}</button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <div className="rounded-3xl border border-accent/40 bg-accent-soft p-4">
             <p className="eyebrow !text-accent">Por porção</p>
             <p className="num mt-1 text-3xl font-bold">{fmtInt(ps.kcal)} <span className="text-sm font-medium text-muted">kcal{ps.grams ? ` · ${fmtInt(ps.grams)} g` : ''}</span></p>
             <p className="num text-sm text-muted">P {fmt(ps.proteinG)} g · C {fmt(ps.carbsG)} g · G {fmt(ps.fatG)} g</p>
-            <p className="num mt-2 text-xs text-muted">Receita inteira: {fmtInt(t.kcal)} kcal · P {fmtInt(t.proteinG)} g · {t.counted} ingrediente(s) na conta{recipe.cookedWeightG ? ` · ${fmtInt((t.kcal / recipe.cookedWeightG) * 100)} kcal por 100 g pronto` : ''}</p>
-            {t.pending > 0 && <p className="mt-1 text-xs font-semibold text-warn">⚠ {t.pending} ingrediente(s) pendente(s): o valor real é maior.</p>}
+            <p className="num mt-2 text-xs text-muted">Pelos ingredientes, receita inteira: {fmtInt(t.kcal)} kcal · P {fmtInt(t.proteinG)} g · {t.counted} ingrediente(s) na conta{recipe.cookedWeightG ? ` · ${fmtInt((t.kcal / recipe.cookedWeightG) * 100)} kcal por 100 g pronto` : ''}</p>
+            {t.pending > 0 && <p className="mt-1 text-xs font-semibold text-warn">⚠ {t.pending} ingrediente(s) pendente(s){nut.basis === 'declared' ? ': usando os valores informados pela receita.' : ': o valor real é maior.'}</p>}
           </div>
 
           {meals.length > 0 && ps.kcal > 0 && (
@@ -261,9 +608,25 @@ export function RecipeEditor({ draft, foods, onClose }: { draft: Draft; foods: F
               <Button variant="secondary" disabled={!newLine.trim()} onClick={() => { setR((x) => ({ ...x, ingredients: [...x.ingredients, ...buildIngredients([newLine.trim()], foods, uid)] })); setNewLine(''); }}>+</Button>
             </div>
           </div>
+          <Field label="Modo de preparo" hint="Um passo por linha.">{(id) => <textarea id={id} rows={5} className="w-full rounded-2xl border border-line bg-card2 p-3" value={stepsText} onChange={(e) => setStepsText(e.target.value)} />}</Field>
+          <div className="rounded-3xl border border-line p-4">
+            <label className="flex min-h-10 items-center gap-2 text-sm font-medium"><input type="checkbox" className="h-5 w-5 accent-[var(--accent)]" checked={showDecl} onChange={(e) => setShowDecl(e.target.checked)} /> A receita informa os valores por porção</label>
+            {showDecl && (
+              <div className="mt-3 space-y-3">
+                <div className="grid grid-cols-3 gap-2">
+                  {([['kcal', 'kcal'], ['proteinG', 'Prot. (g)'], ['carbsG', 'Carb. (g)'], ['fatG', 'Gord. (g)'], ['fiberG', 'Fibra (g)']] as const).map(([k, l]) => (
+                    <Field key={k} label={l}>{(id) => <TextInput id={id} inputMode="decimal" value={decl[k]} onChange={(e) => setDecl({ ...decl, [k]: e.target.value })} />}</Field>
+                  ))}
+                </div>
+                <Field label="Fonte desses valores">{(id) => <TextInput id={id} value={decl.source} onChange={(e) => setDecl({ ...decl, source: e.target.value })} placeholder="ex.: site/app de onde veio a receita" />}</Field>
+                {declIncomplete && <p className="text-xs text-warn">Preencha kcal, proteína, carboidrato, gordura e a fonte (fibra é opcional).</p>}
+                <p className="text-xs text-muted">Só são usados enquanto algum ingrediente estiver sem dados. Com todos ligados à TACO/IBGE, vale a conta pelos ingredientes.</p>
+              </div>
+            )}
+          </div>
           <Field label="Link da receita">{(id) => <TextInput id={id} type="url" value={r.sourceUrl ?? ''} onChange={(e) => setR({ ...r, sourceUrl: e.target.value || undefined })} placeholder="https://…" />}</Field>
           {r.sourceUrl && /^https?:\/\//.test(r.sourceUrl) && <a href={r.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-sm text-accent underline">Abrir receita original ↗</a>}
-          <Field label="Anotações (modo de preparo, ajustes)">{(id) => <textarea id={id} rows={3} className="w-full rounded-2xl border border-line bg-card2 p-3" value={r.notes ?? ''} onChange={(e) => setR({ ...r, notes: e.target.value || undefined })} />}</Field>
+          <Field label="Anotações">{(id) => <textarea id={id} rows={3} className="w-full rounded-2xl border border-line bg-card2 p-3" value={r.notes ?? ''} onChange={(e) => setR({ ...r, notes: e.target.value || undefined })} />}</Field>
           <p className="text-xs text-muted">Ingredientes ligados aos itens crus da TACO quando a receita lista alimentos crus. Para ovos e itens por unidade, salve antes a porção (ex.: “1 ovo” = 50 g) em Alimentos, ou informe os gramas aqui.</p>
         </div>
       </Sheet>
@@ -278,7 +641,7 @@ export function RecipeEditor({ draft, foods, onClose }: { draft: Draft; foods: F
 // ------------------------------------------------------------------------------------------------
 // Registrar receita numa refeição (quanto comer)
 // ------------------------------------------------------------------------------------------------
-export function RecipePickSheet({ date, meal: initialMeal, recipeId, onClose }: { date: string; meal?: string; recipeId?: string; onClose: () => void }) {
+export function RecipePickSheet({ date, meal: initialMeal, recipeId, portions, onClose }: { date: string; meal?: string; recipeId?: string; portions?: number; onClose: () => void }) {
   const settings = useSettingsOrDefault();
   const today = useToday();
   const save = useSave();
@@ -290,18 +653,20 @@ export function RecipePickSheet({ date, meal: initialMeal, recipeId, onClose }: 
   const [meal, setMeal] = useState(initialMeal ?? suggestMeal(settings.meals, nowTime));
   const [rid, setRid] = useState<string | undefined>(recipeId);
   const [mode, setMode] = useState<'portions' | 'grams'>('portions');
-  const [amount, setAmount] = useState('');
+  const [amount, setAmount] = useState(portions ? String(portions).replace('.', ',') : '');
   const mealLogs = useLiveQuery(() => db.foodLogs.where('date').equals(date).filter((l) => l.mealLabel === meal).toArray(), [date, meal], [] as FoodLog[]);
   const recipe = recipes.find((r) => r.id === rid);
   const tg = targetsForDate(targetsAll, date);
   const mt = tg ? mealTargets(settings.meals, tg, settings.mealSplits).find((m) => m.label === meal) : undefined;
   const consumed = dayTotals(mealLogs);
   const remaining = mt ? mt.kcal - consumed.kcal : 0;
-  const t = recipe ? recipeTotals(recipe, foods) : null;
-  const ps = recipe && t ? perServing(t, recipe) : null;
+  const nut = recipe ? recipeNutrition(recipe, foods) : null;
+  const t = nut?.totals ?? null;
+  const ps = nut?.perServing ?? null;
   const sug = ps && remaining > 0 ? suggestPortions(ps, remaining) : null;
   const amountN = parseDecimal(amount);
-  const eaten = recipe && t && amountN ? consumedFromRecipe(t, recipe, amountN, mode) : null;
+  const eaten = nut && amountN ? eatenFromRecipe(nut, amountN, mode) : null;
+  const partial = nut?.basis === 'partial';
   const mealOptions = settings.meals.some((m) => m.label === meal) ? settings.meals : [...settings.meals, { label: meal, time: '' }];
 
   async function submit() {
@@ -312,9 +677,9 @@ export function RecipePickSheet({ date, meal: initialMeal, recipeId, onClose }: 
       description: `${recipe.name} (${mode === 'portions' ? formatPortions(amountN) : `${fmtInt(amountN)} g`})`,
       amount: amountN, unit: mode === 'portions' ? 'unit' : 'g', preparation: 'cooked',
       kcal: eaten.kcal, proteinG: eaten.proteinG, carbsG: eaten.carbsG, fatG: eaten.fatG, nutritionIsEstimated: false,
-      note: t && t.pending ? `${t.pending} ingrediente(s) sem dados na receita` : undefined,
+      note: nut?.basis === 'declared' ? `Valores informados pela receita (${recipe.declared?.source ?? 'fonte'})` : partial ? `${t?.pending} ingrediente(s) sem dados na receita` : undefined,
     }), `${recipe.name} registrada em ${meal}`);
-    if (id) { if (t?.pending) show('A receita tem ingredientes sem dados: o valor registrado é parcial.', 'info'); onClose(); }
+    if (id) { if (partial) show('A receita tem ingredientes sem dados: o valor registrado é parcial.', 'info'); onClose(); }
   }
 
   return (
@@ -326,7 +691,7 @@ export function RecipePickSheet({ date, meal: initialMeal, recipeId, onClose }: 
           recipes.length === 0 ? <EmptyState icon="📖">Nenhuma receita salva. Crie ou importe em Alimentação → Receitas.</EmptyState> : (
             <ul className="space-y-2">
               {[...recipes].sort((a, b) => Number(!!b.favorite) - Number(!!a.favorite) || a.name.localeCompare(b.name, 'pt-BR')).map((r) => {
-                const pr = perServing(recipeTotals(r, foods), r);
+                const pr = recipeNutrition(r, foods).perServing;
                 return (
                   <li key={r.id}><button type="button" onClick={() => { setRid(r.id); setAmount(''); setMode('portions'); }} className="flex w-full items-center justify-between gap-2 rounded-2xl border border-line p-3 text-left hover:border-accent">
                     <span className="min-w-0"><span className="block font-semibold">{r.favorite && <span className="text-accent">★ </span>}{r.name}</span><span className="text-xs text-muted">rende {fmt(r.servings, r.servings % 1 ? 1 : 0)} porções</span></span>
@@ -353,11 +718,12 @@ export function RecipePickSheet({ date, meal: initialMeal, recipeId, onClose }: 
                 ) : <p className="mt-1 text-xs text-muted">{remaining <= 0 ? 'A meta desta refeição já foi atingida.' : '—'}</p>}
               </div>
             )}
-            {recipe.cookedWeightG ? <Segmented label="Medir por" value={mode} onChange={(v) => { setMode(v); setAmount(''); }} options={[{ value: 'portions', label: 'Porções' }, { value: 'grams', label: 'Gramas' }]} /> : null}
+            {ps?.grams ? <Segmented label="Medir por" value={mode} onChange={(v) => { setMode(v); setAmount(''); }} options={[{ value: 'portions', label: 'Porções' }, { value: 'grams', label: 'Gramas' }]} /> : null}
             <Field label={mode === 'portions' ? 'Quantas porções' : 'Quantos gramas do preparo pronto'}>{(id) => <TextInput id={id} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} className="num text-lg font-semibold" placeholder={mode === 'portions' ? 'ex.: 1,5' : 'ex.: 250'} />}</Field>
             {mode === 'portions' && <div className="flex flex-wrap gap-1.5">{[0.5, 1, 1.5, 2].map((p) => <button key={p} type="button" className="rounded-full border border-line px-3 py-1.5 text-sm" onClick={() => setAmount(String(p).replace('.', ','))}>{formatPortions(p)}</button>)}</div>}
             {eaten && <p className="num rounded-2xl bg-card2 p-3 text-center"><b>{fmtInt(eaten.kcal)} kcal</b> · P {fmt(eaten.proteinG)} g · C {fmt(eaten.carbsG)} g · G {fmt(eaten.fatG)} g</p>}
-            {t && t.pending > 0 && <p className="text-xs text-warn">⚠ A receita tem {t.pending} ingrediente(s) sem dados: o valor é parcial.</p>}
+            {partial && <p className="text-xs text-warn">⚠ A receita tem {t?.pending} ingrediente(s) sem dados: o valor é parcial.</p>}
+            {nut?.basis === 'declared' && <p className="text-xs text-muted">Valores por porção informados pela receita (faltam dados de {t?.pending} ingrediente(s) na base).</p>}
           </>
         )}
       </div>

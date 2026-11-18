@@ -83,3 +83,17 @@ export function defaultSettings(now: string): Settings {
     updatedAt: now,
   };
 }
+
+/** Categorias de receitas padrão (sem fotos — a foto vem do pacote de receitas ou do próprio usuário). id = seed-cat-<slug>. */
+export const DEFAULT_RECIPE_CATEGORIES: { id: string; name: string }[] = [
+  { id: 'seed-cat-1-panela', name: '1 Panela' },
+  { id: 'seed-cat-50g-proteina', name: '50g de proteína' },
+  { id: 'seed-cat-acompanhamentos', name: 'Acompanhamentos' },
+  { id: 'seed-cat-airfryer', name: 'Airfryer' },
+  { id: 'seed-cat-aveia', name: 'Aveia' },
+  { id: 'seed-cat-baixa-caloria', name: 'Baixa caloria' },
+  { id: 'seed-cat-bebidas-geladas', name: 'Bebidas geladas' },
+  { id: 'seed-cat-bebidas-quentes', name: 'Bebidas quentes' },
+  { id: 'seed-cat-com-frango', name: 'Com frango' },
+  { id: 'seed-cat-marmitas', name: 'Marmitas' },
+];

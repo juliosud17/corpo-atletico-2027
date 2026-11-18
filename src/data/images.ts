@@ -51,3 +51,18 @@ export async function processImage(file: File): Promise<ProcessedImage> {
 export function bufferUrl(buf: ArrayBuffer, type = 'image/jpeg'): string {
   return URL.createObjectURL(new Blob([buf], { type }));
 }
+
+/** Foto de receita/categoria: reduz no aparelho e devolve como data URL JPEG (cabe no banco local e no backup). */
+export async function imageToDataUrl(file: File, maxSide = 900): Promise<string> {
+  if (!file.type.startsWith('image/') && !/\.(heic|heif|jpe?g|png|webp)$/i.test(file.name)) throw new Error('Escolha um arquivo de imagem.');
+  const { img, w, h, close } = await loadBitmap(file);
+  try {
+    const { blob } = await render(img, w, h, maxSide, 0.8);
+    return await new Promise<string>((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(String(fr.result));
+      fr.onerror = () => reject(new Error('Falha ao ler a imagem.'));
+      fr.readAsDataURL(blob);
+    });
+  } finally { close?.(); }
+}
