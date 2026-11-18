@@ -1,4 +1,4 @@
-# Corpo Atlético 2027 — Fase 1 (MVP)
+# Corpo Atlético 2027 — Fases 1 e 2
 
 Aplicativo pessoal, mobile-first e offline para acompanhar peso, alimentação, água, hábitos e metas de uma transformação corporal gradual.
 
@@ -35,7 +35,8 @@ Testes de ponta a ponta (opcional, requer Python + Playwright e o `npm run previ
 
 ```bash
 pip install playwright && playwright install chromium
-python3 e2e/flows.py   # 28 verificações em tela de 320 px, incluindo modo offline (pasta local, não versionada)
+python3 e2e/flows.py   # Fase 1: 28 verificações em 320 px, incluindo offline (pasta local, não versionada)
+python3 e2e/fase2.py   # Fase 2: 20 verificações (sessão ao vivo, reload no meio do treino, editor, histórico)
 ```
 
 ## Instalar no iPhone
@@ -49,7 +50,7 @@ O PWA só funciona offline e instala corretamente quando servido por **HTTPS**. 
 
 Alternativas: Netlify/Vercel/Cloudflare Pages (arraste a pasta `dist/`). Para testar na rede local: `npm run dev -- --host` (sem service worker, pois não é HTTPS).
 
-## O que está pronto (Fase 1)
+## O que está pronto (Fases 1 e 2)
 
 | Área | Implementado |
 |---|---|
@@ -58,7 +59,10 @@ Alternativas: Netlify/Vercel/Cloudflare Pages (arraste a pasta `dist/`). Para te
 | Evolução | Registro/edição/exclusão de peso (data + hora), gráfico 7/30/90 dias/tudo com linha real e linha de metas interpolada, “Sem dados registrados”, médias semanais (segunda a domingo) com contagem e “parcial”, diferença para a semana anterior ou “dados insuficientes”, IMC com ressalva, calendário de marcos (atingido/não atingido/remarcado), medidas corporais opcionais e % de gordura apenas se medido externamente (com método) |
 | Alimentação | Diário por dia e refeição (horários editáveis + “Extras”), catálogo com busca, alimentos por g/ml/unidade e estado cru/cozido, correção de valores por marca/preparo com fonte, cadastro manual, kcal do rótulo preservada e kcal estimada por macros sinalizada, itens sem dados registrados sem inventar macros, copiar refeição de ontem, favoritas, água (atalhos e valor livre), últimos 7 dias com adesão sobre **dias registrados** |
 | Checklist | Listas diárias, semanais e mensais; marcação só manual; dicas calculadas dos registros (ex.: “pesagens nesta semana: 2 de 3”); criar, editar, pausar e excluir |
-| Treinos (parcial) | Alerta de segurança com as condições informadas no perfil, fluxo “Iniciar treino físico” (confirmar liberação com data **ou** registrar só o planejamento), semana atual, semana de referência A/B/C com exercícios, registro simples de sessão (concluído/parcial/adiado/cancelado/não liberado), confirmação obrigatória para registrar execução sem liberação, SAMU 192 em sintomas urgentes |
+| Treinos — segurança | Alerta com as condições informadas no perfil, “Iniciar treino físico” (confirmar liberação com data **ou** só planejamento), status “não liberado” mantido até a confirmação, confirmação obrigatória para iniciar ou registrar execução sem liberação (a sessão fica marcada), SAMU 192 em sintomas urgentes |
+| Treinos — sessão ao vivo (Fase 2) | ▶ Iniciar a partir do dia planejado ou avulso; cronômetro iniciar/pausar/retomar que sobrevive a recarregar a página; séries com repetições, carga e RPE (sugestões a partir da série anterior e da última sessão), marcação “senti dor” com orientação para interromper, exercício avulso, cardio com modalidade/minutos/intensidade, desconforto e notas; finalizar como concluída ou parcial, ou descartar |
+| Treinos — plano editável (Fase 2) | Criar, editar e excluir treinos (nome, dia, tipo, duração, exige liberação, aviso de segurança); adicionar, editar séries/repetições/observações, reordenar e remover exercícios, com sugestões da biblioteca |
+| Treinos — evolução e agenda (Fase 2) | Biblioteca de exercícios com histórico por exercício (gráfico de carga máxima ou repetições + tabela), sugestão de progressão pela regra do briefing (duas sessões seguidas completas, RPE ≤ 8, sem dor — nunca aplicada sozinha), calendário mensal de previstos × realizados, cardio da semana rumo a 150 min, marcadores de dor dos registros “Como estou hoje”, histórico com séries e cardio; registro rápido mantido |
 | Como estou hoje | Sono, energia, fome, estresse, dor por articulação e lado, inchaço no tornozelo, “procurei avaliação profissional”, notas — sem diagnóstico; alerta de emergência curto e visível |
 | Perfil/Plano | Nome, idade, sexo para TMB, altura, datas, objetivo, ritmo, condições de saúde; IMC e TMB (Mifflin-St Jeor) com método; metas nutricionais com **data de vigência** e histórico (confirmação antes de alterar); edição dos marcos; refeições/horários/preferências; tema claro/escuro/automático, verde/azul, fuso horário; pausar acompanhamento |
 | Backup | Exportar JSON (com `schemaVersion`), importar com validação Zod, prévia das contagens, avisos de inconsistência, modos **mesclar** (por ID, sem duplicar) ou **substituir** (exige digitar SUBSTITUIR); apagar tudo com dupla confirmação (digitar APAGAR); status do armazenamento persistente |
@@ -74,13 +78,12 @@ Alternativas: Netlify/Vercel/Cloudflare Pages (arraste a pasta `dist/`). Para te
 
 ## Itens futuros (não implementados)
 
-- **Fase 2:** biblioteca editável de exercícios, séries/repetições/cargas/RPE por exercício, cronômetro iniciar/pausar/finalizar, histórico e gráfico de carga por exercício, agenda de treinos.
 - **Fase 3:** fotos privadas (frente/perfil) com rótulos “foto real” × “simulação”, comparação lado a lado, resumos semanais/mensais e relatório CSV/HTML imprimível, lembretes mais completos.
 - **Fase 4:** sincronização (ex.: Supabase com RLS), Apple Health, código de barras com base verificável, widgets.
 
 ## Testes
 
-`npm test` — 36 testes públicos (Vitest + fake-indexeddb) com valores de exemplo, mais 5 privados em `private/` com os valores reais. Critérios de aceitação:
+`npm test` — 45 testes públicos (Vitest + fake-indexeddb) com valores de exemplo, incluindo cronômetro, histórico/progressão por exercício, sessão ao vivo, editor de plano e migração do banco v1 → v2, mais 5 privados em `private/` com os valores reais. Critérios de aceitação da Parte G:
 
 | Parte G | Coberto por |
 |---|---|
@@ -115,6 +118,10 @@ src/
 private/          plano pessoal + testes com valores reais (não versionado)
 e2e/flows.py      fluxos ponta a ponta (Playwright, não versionado)
 ```
+
+## Atualizações e dados existentes
+
+O banco local é versionado (Dexie). A Fase 2 adicionou a versão 2 (índice de séries por exercício e campos opcionais de cronômetro/cardio) — os registros da Fase 1 são preservados automaticamente na atualização. Backups antigos continuam importáveis.
 
 ## Modelo de dados
 

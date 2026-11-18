@@ -109,12 +109,15 @@ const exercise = z.object({
 const session = z.object({
   ...base, date: isoDate, planId: id.optional(), startedAt: isoDateTime.optional(), completedAt: isoDateTime.optional(),
   status: z.enum(['planned', 'completed', 'partial', 'postponed', 'cancelled', 'not_cleared']),
+  inProgress: z.boolean().optional(), timerAccumulatedMs: optNum(0, 864e5), timerRunningSince: isoDateTime.optional(),
+  cardioModality: text(80).optional(), cardioIntensity: optNum(0, 10),
   durationMin: optNum(0, 1440), cardioMinutes: optNum(0, 1440), rpe: optNum(0, 10), discomfort: text(500).optional(),
   notes: text(1000).optional(), confirmedWithoutClearance: z.boolean().optional(), createdAt: isoDateTime, updatedAt: isoDateTime,
 });
 
 const exerciseSet = z.object({
   ...base, sessionId: id, exerciseName: text(120), order: z.number(), reps: optNum(0, 1000), loadKg: optNum(0, 1000), rpe: optNum(0, 10),
+  pain: z.boolean().optional(), note: text(300).optional(), createdAt: isoDateTime.optional(),
 });
 
 const scale = (a: number, b: number) => z.number().int().min(a).max(b).optional();

@@ -7,9 +7,10 @@ import {
 } from './seed';
 import { monthKey, todayISO, weekStartMonday } from '../domain/dates';
 import type {
-  BackupFile, BodyMeasurement, Cadence, FoodItem, FoodLog, GoalMilestone, HabitDefinition, ISODate,
-  NutritionTargets, RecoveryEntry, Settings, UserProfile, WaterEntry, WeightEntry, WorkoutSession,
+  BackupFile, BodyMeasurement, Cadence, ExercisePrescription, ExerciseSet, FoodItem, FoodLog, GoalMilestone, HabitDefinition, ISODate,
+  NutritionTargets, RecoveryEntry, Settings, UserProfile, WaterEntry, WeightEntry, WorkoutPlan, WorkoutSession,
 } from '../domain/types';
+import { elapsedMs } from '../domain/workouts';
 import { SCHEMA_VERSION } from '../domain/types';
 
 // Configuração inicial ------------------------------------------------------------
@@ -177,11 +178,90 @@ export async function deleteHabit(id: string, database: CorpoDB = db): Promise<v
 export async function saveWorkoutSession(s: Omit<WorkoutSession, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }, database: CorpoDB = db): Promise<string> {
   const now = nowISO();
   const existing = s.id ? await database.workouts.get(s.id) : undefined;
-  const entry: WorkoutSession = { ...s, id: existing?.id ?? uid(), createdAt: existing?.createdAt ?? now, updatedAt: now };
+  // Mescla com o registro existente para não perder campos da sessão ao vivo (cronômetro, cardio).
+  const entry: WorkoutSession = { ...(existing ?? {}), ...s, id: existing?.id ?? uid(), createdAt: existing?.createdAt ?? now, updatedAt: now } as WorkoutSession;
   await database.workouts.put(entry);
   return entry.id;
 }
-export const deleteWorkoutSession = (id: string, database: CorpoDB = db) => database.workouts.delete(id);
+export async function deleteWorkoutSession(id: string, database: CorpoDB = db): Promise<void> {
+  await database.transaction('rw', database.workouts, database.exerciseSets, async () => {
+    await database.exerciseSets.where('sessionId').equals(id).delete();
+    await database.workouts.delete(id);
+  });
+}
+
+// Sessão ao vivo (Fase 2) ------------------------------------------------------------------
+export async function getActiveSession(database: CorpoDB = db): Promise<WorkoutSession | undefined> {
+  return database.workouts.filter((w) => !!w.inProgress).first();
+}
+
+export async function startLiveSession(input: { date: ISODate; planId?: string; confirmedWithoutClearance?: boolean }, database: CorpoDB = db): Promise<string> {
+  const active = await getActiveSession(database);
+  if (active) return active.id;
+  const now = nowISO();
+  const s: WorkoutSession = {
+    id: uid(), date: input.date, planId: input.planId, status: 'planned', inProgress: true, startedAt: now,
+    timerAccumulatedMs: 0, timerRunningSince: now, confirmedWithoutClearance: input.confirmedWithoutClearance || undefined,
+    createdAt: now, updatedAt: now,
+  };
+  await database.workouts.put(s);
+  return s.id;
+}
+
+export async function patchSession(id: string, patch: Partial<WorkoutSession>, database: CorpoDB = db): Promise<void> {
+  await database.workouts.update(id, { ...patch, updatedAt: nowISO() });
+}
+
+export async function finishLiveSession(id: string, status: 'completed' | 'partial' | 'cancelled', database: CorpoDB = db, now: number = Date.now()): Promise<void> {
+  const s = await database.workouts.get(id);
+  if (!s) throw new Error('Sessão não encontrada');
+  const ms = elapsedMs(s, now);
+  await database.workouts.put({
+    ...s, status, inProgress: false, timerAccumulatedMs: ms, timerRunningSince: undefined,
+    durationMin: Math.max(s.durationMin ?? 0, Math.round(ms / 60000)) || undefined,
+    completedAt: status === 'cancelled' ? undefined : new Date(now).toISOString(), updatedAt: nowISO(),
+  });
+}
+
+export async function saveSet(set: Omit<ExerciseSet, 'id'> & { id?: string }, database: CorpoDB = db): Promise<string> {
+  const id = set.id ?? uid();
+  await database.exerciseSets.put({ ...set, id, createdAt: set.createdAt ?? nowISO() });
+  return id;
+}
+export const deleteSet = (id: string, database: CorpoDB = db) => database.exerciseSets.delete(id);
+
+// Plano de treino (Fase 2) -----------------------------------------------------------------
+export async function savePlan(p: Omit<WorkoutPlan, 'id'> & { id?: string }, database: CorpoDB = db): Promise<string> {
+  const id = p.id ?? uid();
+  await database.workoutPlans.put({ ...p, id });
+  return id;
+}
+
+export async function deletePlan(id: string, database: CorpoDB = db): Promise<void> {
+  await database.transaction('rw', database.workoutPlans, database.exercises, async () => {
+    await database.exercises.where('workoutPlanId').equals(id).delete();
+    await database.workoutPlans.delete(id);
+  });
+}
+
+export async function saveExercise(e: Omit<ExercisePrescription, 'id'> & { id?: string }, database: CorpoDB = db): Promise<string> {
+  const id = e.id ?? uid();
+  await database.exercises.put({ ...e, id });
+  return id;
+}
+export const deleteExercise = (id: string, database: CorpoDB = db) => database.exercises.delete(id);
+
+/** Troca a ordem de um exercício com o vizinho (dir = -1 sobe, +1 desce). */
+export async function moveExercise(id: string, dir: -1 | 1, database: CorpoDB = db): Promise<void> {
+  const ex = await database.exercises.get(id);
+  if (!ex) return;
+  const list = (await database.exercises.where('workoutPlanId').equals(ex.workoutPlanId).toArray()).sort((a, b) => a.order - b.order);
+  const i = list.findIndex((x) => x.id === id);
+  const j = i + dir;
+  if (j < 0 || j >= list.length) return;
+  [list[i], list[j]] = [list[j], list[i]];
+  await database.exercises.bulkPut(list.map((x, k) => ({ ...x, order: k })));
+}
 
 export async function saveRecovery(r: Omit<RecoveryEntry, 'id' | 'createdAt' | 'updatedAt'> & { id?: string }, database: CorpoDB = db): Promise<string> {
   const now = nowISO();

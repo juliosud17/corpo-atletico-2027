@@ -31,6 +31,7 @@ export function WorkoutLogSheet({ date: d, planId, session, onClose }: { date?: 
   const [status, setStatus] = useState<WorkoutStatus>(session?.status ?? (needsClearance ? 'not_cleared' : 'completed'));
   const [duration, setDuration] = useState(session?.durationMin ? String(session.durationMin) : '');
   const [cardio, setCardio] = useState(session?.cardioMinutes ? String(session.cardioMinutes) : '');
+  const [modality, setModality] = useState(session?.cardioModality ?? '');
   const [rpe, setRpe] = useState(session?.rpe ? String(session.rpe) : '');
   const [discomfort, setDiscomfort] = useState(session?.discomfort ?? '');
   const [notes, setNotes] = useState(session?.notes ?? '');
@@ -47,7 +48,7 @@ export function WorkoutLogSheet({ date: d, planId, session, onClose }: { date?: 
   async function persist(confirmedWithoutClearance: boolean) {
     const n = (s: string) => { const v = parseDecimal(s); return v === null ? undefined : v; };
     const id = await save(() => saveWorkoutSession({
-      id: session?.id, date, planId: plan?.id, status, durationMin: n(duration), cardioMinutes: n(cardio), rpe: n(rpe),
+      id: session?.id, date, planId: plan?.id, status, durationMin: n(duration), cardioMinutes: n(cardio), cardioModality: modality.trim() || undefined, rpe: n(rpe),
       discomfort: discomfort.trim() || undefined, notes: notes.trim() || undefined,
       completedAt: executes ? localDateTimeToISO(date, '12:00') : undefined,
       confirmedWithoutClearance: confirmedWithoutClearance || undefined,
@@ -90,6 +91,7 @@ export function WorkoutLogSheet({ date: d, planId, session, onClose }: { date?: 
               <Field label="Duração (min)">{(id) => <TextInput id={id} inputMode="numeric" value={duration} onChange={(e) => setDuration(e.target.value)} />}</Field>
               <Field label="Cardio (min)">{(id) => <TextInput id={id} inputMode="numeric" value={cardio} onChange={(e) => setCardio(e.target.value)} />}</Field>
               <Field label="Esforço (RPE 1–10)">{(id) => <TextInput id={id} inputMode="numeric" value={rpe} onChange={(e) => setRpe(e.target.value)} />}</Field>
+              <Field label="Modalidade do cardio" className="col-span-3">{(id) => <TextInput id={id} value={modality} onChange={(e) => setModality(e.target.value)} placeholder="bicicleta, elíptico, caminhada leve…" />}</Field>
             </div>
           )}
           <Field label="Desconforto durante a sessão" hint="Interrompa qualquer movimento que provoque dor aguda ou piora.">{(id) => <TextInput id={id} value={discomfort} onChange={(e) => setDiscomfort(e.target.value)} placeholder="ex.: joelho direito no sentar e levantar" />}</Field>
@@ -99,7 +101,7 @@ export function WorkoutLogSheet({ date: d, planId, session, onClose }: { date?: 
             <span>Tive falta de ar, dor no peito ou desmaio</span>
           </label>
           {urgent && <EmergencyAlert />}
-          <p className="text-xs text-muted">O app não estima calorias gastas nem libera mais comida por causa do treino. Séries, cargas e cronômetro chegam na Fase 2.</p>
+          <p className="text-xs text-muted">Registro rápido. Para séries, cargas e cronômetro, use ▶ Iniciar na tela Treinos. O app não estima calorias gastas.</p>
         </div>
       </Sheet>
       <ConfirmDialog open={confirmNoClearance} title="Registrar execução sem liberação?" confirmLabel="Sim, registrar"

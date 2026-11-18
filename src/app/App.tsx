@@ -11,6 +11,7 @@ import { Nutrition } from '../features/nutrition/Nutrition';
 import { Workouts } from '../features/workouts/Workouts';
 import { Profile } from '../features/profile/Profile';
 import { ChecklistPage } from '../features/habits/Checklist';
+import { LiveSession } from '../features/workouts/LiveSession';
 import type { Settings } from '../domain/types';
 
 const NAV = [
@@ -78,6 +79,7 @@ function Shell() {
         <Route path="/evolucao" element={<Progress />} />
         <Route path="/alimentacao" element={<Nutrition />} />
         <Route path="/treinos" element={<Workouts />} />
+        <Route path="/treinos/sessao" element={<LiveSession />} />
         <Route path="/perfil" element={<Profile />} />
         <Route path="/checklist" element={<ChecklistPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />

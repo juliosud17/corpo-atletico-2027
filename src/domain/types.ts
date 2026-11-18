@@ -180,8 +180,17 @@ export interface WorkoutSession {
   startedAt?: ISODateTime;
   completedAt?: ISODateTime;
   status: WorkoutStatus;
+  /** Sessão aberta no modo "ao vivo" (cronômetro + séries). */
+  inProgress?: boolean;
+  /** Tempo acumulado do cronômetro (ms) até a última pausa. */
+  timerAccumulatedMs?: number;
+  /** Instante em que o cronômetro voltou a correr (ausente = pausado). */
+  timerRunningSince?: ISODateTime;
   durationMin?: number;
   cardioMinutes?: number;
+  cardioModality?: string;
+  /** Intensidade percebida do cardio (0–10). */
+  cardioIntensity?: number;
   rpe?: number;
   discomfort?: string;
   notes?: string;
@@ -199,6 +208,10 @@ export interface ExerciseSet {
   reps?: number;
   loadKg?: number;
   rpe?: number;
+  /** Série interrompida/feita com dor ou desconforto. */
+  pain?: boolean;
+  note?: string;
+  createdAt?: ISODateTime;
 }
 
 export interface RecoveryEntry {

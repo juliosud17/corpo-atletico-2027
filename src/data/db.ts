@@ -5,6 +5,27 @@ import type {
   WeightEntry, WorkoutPlan, WorkoutSession,
 } from '../domain/types';
 
+/** Esquema da versão 1 (Fase 1) — mantido para a migração. */
+export const SCHEMA_V1 = {
+  profile: 'id',
+  milestones: 'id, date',
+  targets: 'id, effectiveDate',
+  weights: 'id, date, measuredAt',
+  measurements: 'id, measuredOn',
+  foodItems: 'id, name, favorite',
+  foodLogs: 'id, date, mealLabel, foodId',
+  favoriteMeals: 'id, name',
+  waterEntries: 'id, date',
+  workoutPlans: 'id, weekday, order',
+  exercises: 'id, workoutPlanId, order',
+  workouts: 'id, date, planId, status',
+  exerciseSets: 'id, sessionId',
+  recovery: 'id, date',
+  habits: 'id, cadence, order',
+  completions: 'id, habitId, periodKey, date',
+  settings: 'id',
+};
+
 export class CorpoDB extends Dexie {
   profile!: EntityTable<UserProfile, 'id'>;
   milestones!: EntityTable<GoalMilestone, 'id'>;
@@ -26,24 +47,10 @@ export class CorpoDB extends Dexie {
 
   constructor(name = 'corpo-atletico-2027') {
     super(name);
-    this.version(1).stores({
-      profile: 'id',
-      milestones: 'id, date',
-      targets: 'id, effectiveDate',
-      weights: 'id, date, measuredAt',
-      measurements: 'id, measuredOn',
-      foodItems: 'id, name, favorite',
-      foodLogs: 'id, date, mealLabel, foodId',
-      favoriteMeals: 'id, name',
-      waterEntries: 'id, date',
-      workoutPlans: 'id, weekday, order',
-      exercises: 'id, workoutPlanId, order',
-      workouts: 'id, date, planId, status',
-      exerciseSets: 'id, sessionId',
-      recovery: 'id, date',
-      habits: 'id, cadence, order',
-      completions: 'id, habitId, periodKey, date',
-      settings: 'id',
+    this.version(1).stores(SCHEMA_V1);
+    // Fase 2: índice por exercício (histórico/evolução de carga). Dados existentes são preservados.
+    this.version(2).stores({
+      exerciseSets: 'id, sessionId, exerciseName',
     });
   }
 }

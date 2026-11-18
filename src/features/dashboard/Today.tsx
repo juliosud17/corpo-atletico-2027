@@ -34,6 +34,7 @@ export function Today() {
   const plans = useLiveQuery(() => db.workoutPlans.toArray(), []) ?? [];
   const sessionsToday = useLiveQuery(() => db.workouts.where('date').equals(today).toArray(), [today]) ?? [];
   const recoveryToday = useLiveQuery(() => db.recovery.where('date').equals(today).first(), [today]);
+  const activeSession = useLiveQuery(() => db.workouts.filter((w) => !!w.inProgress).first(), []);
   const weekWeights = weights.filter((w) => w.date >= weekStartMonday(today) && w.date <= today).length;
 
   if (!profile) return null;
@@ -81,6 +82,12 @@ export function Today() {
       </header>
 
       <div className="space-y-4">
+        {activeSession && (
+          <Link to="/treinos/sessao" className="flex items-center justify-between gap-3 rounded-2xl bg-accent px-4 py-3 text-accent-fg">
+            <span><span className="block text-xs font-semibold uppercase tracking-wide">Sessão em andamento</span><span className="block font-bold">Continuar treino</span></span>
+            <span aria-hidden className="text-2xl">›</span>
+          </Link>
+        )}
         {settings.trackingPaused && <Alert tone="info" title="Acompanhamento pausado">Seu histórico está guardado. Retome quando quiser em Perfil.</Alert>}
 
         {settings.showWeight && (
